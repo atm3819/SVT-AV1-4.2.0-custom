@@ -347,16 +347,16 @@ static INLINE SvtAv1EffectiveQp svt_av1_get_effective_qp(const SequenceControlSe
             continue;
         }
 
-        qp.qp                = (uint8_t)(zone_qp > MAX_QP_VALUE ? MAX_QP_VALUE : zone_qp);
-        qp.qp_is_max         = zone_qp >= MAX_QP_VALUE;
-        qp.from_zone         = true;
+        qp.qp        = (uint8_t)(zone_qp > MAX_QP_VALUE ? MAX_QP_VALUE : zone_qp);
+        qp.qp_is_max = zone_qp >= MAX_QP_VALUE;
+        qp.from_zone = true;
 
         if (zone_qp >= MAX_QP_VALUE) {
-            qp.qindex_offset                = (uint32_t)((zone_qp - MAX_QP_VALUE) * 4 + zone_qsidx);
-            qp.extended_crf_qindex_offset   = qp.qindex_offset;
+            qp.qindex_offset              = (uint32_t)((zone_qp - MAX_QP_VALUE) * 4 + zone_qsidx);
+            qp.extended_crf_qindex_offset = qp.qindex_offset;
         } else {
-            qp.qindex_offset                = (uint32_t)zone_qsidx;
-            qp.extended_crf_qindex_offset   = 0;
+            qp.qindex_offset              = (uint32_t)zone_qsidx;
+            qp.extended_crf_qindex_offset = 0;
         }
     }
 

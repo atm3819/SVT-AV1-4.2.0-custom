@@ -3663,7 +3663,7 @@ EbErrorType generate_md_stage_0_cand(PictureControlSet* pcs, ModeDecisionContext
     bool merge_inter_cands = 0;
     if (ctx->nic_ctrls.pruning_ctrls.merge_inter_cands_mult != (uint8_t)~0) {
         const uint8_t effective_qp = svt_av1_get_effective_qp(pcs->scs, pcs->ppcs->picture_number).qp;
-        uint16_t      th = (ctx->nic_ctrls.pruning_ctrls.merge_inter_cands_mult * (63 - effective_qp)) >> 1;
+        uint16_t      th           = (ctx->nic_ctrls.pruning_ctrls.merge_inter_cands_mult * (63 - effective_qp)) >> 1;
         if ((MIN(ctx->md_me_dist, ctx->md_pme_dist) / (ctx->blk_geom->bwidth * ctx->blk_geom->bheight)) < th) {
             merge_inter_cands = 1;
         }

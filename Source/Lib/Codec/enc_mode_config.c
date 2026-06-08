@@ -441,11 +441,10 @@ static void set_me_search_params(SequenceControlSet* scs, PictureParentControlSe
         me_ctx->me_sa.sa_max = (SearchArea){8, 1};
     }
     uint32_t q_weight, q_weight_denom;
-    svt_aom_get_qp_based_th_scaling_factors(
-        scs->qp_based_th_scaling_ctrls.me_qp_based_th_scaling,
-        &q_weight,
-        &q_weight_denom,
-        svt_av1_get_effective_qp(scs, pcs->picture_number).qp);
+    svt_aom_get_qp_based_th_scaling_factors(scs->qp_based_th_scaling_ctrls.me_qp_based_th_scaling,
+                                            &q_weight,
+                                            &q_weight_denom,
+                                            svt_av1_get_effective_qp(scs, pcs->picture_number).qp);
     me_ctx->me_sa.sa_min.width  = MAX(8, DIVIDE_AND_ROUND(me_ctx->me_sa.sa_min.width * q_weight, q_weight_denom));
     me_ctx->me_sa.sa_min.height = MAX(3, DIVIDE_AND_ROUND(me_ctx->me_sa.sa_min.height * q_weight, q_weight_denom));
     me_ctx->me_sa.sa_max.width  = MAX(8, DIVIDE_AND_ROUND(me_ctx->me_sa.sa_max.width * q_weight, q_weight_denom));
@@ -573,11 +572,10 @@ static void set_me_search_params(SequenceControlSet* scs, PictureParentControlSe
         me_ctx->me_sa.sa_max = (SearchArea){8, 1};
     }
     uint32_t q_weight, q_weight_denom;
-    svt_aom_get_qp_based_th_scaling_factors(
-        scs->qp_based_th_scaling_ctrls.me_qp_based_th_scaling,
-        &q_weight,
-        &q_weight_denom,
-        svt_av1_get_effective_qp(scs, pcs->picture_number).qp);
+    svt_aom_get_qp_based_th_scaling_factors(scs->qp_based_th_scaling_ctrls.me_qp_based_th_scaling,
+                                            &q_weight,
+                                            &q_weight_denom,
+                                            svt_av1_get_effective_qp(scs, pcs->picture_number).qp);
     me_ctx->me_sa.sa_min.width  = MAX(8, DIVIDE_AND_ROUND(me_ctx->me_sa.sa_min.width * q_weight, q_weight_denom));
     me_ctx->me_sa.sa_min.height = MAX(3, DIVIDE_AND_ROUND(me_ctx->me_sa.sa_min.height * q_weight, q_weight_denom));
     me_ctx->me_sa.sa_max.width  = MAX(8, DIVIDE_AND_ROUND(me_ctx->me_sa.sa_max.width * q_weight, q_weight_denom));
@@ -12272,8 +12270,8 @@ void svt_aom_sig_deriv_mode_decision_config_default(SequenceControlSet* scs, Pic
             }
         }
     }
-    SvtAv1EffectiveQp active_qp = svt_av1_get_effective_qp(scs, ppcs->picture_number);
-    uint32_t active_ext_crf_qindex_offset = active_qp.extended_crf_qindex_offset;
+    SvtAv1EffectiveQp active_qp                    = svt_av1_get_effective_qp(scs, ppcs->picture_number);
+    uint32_t          active_ext_crf_qindex_offset = active_qp.extended_crf_qindex_offset;
     // Extended CRF range (63.25 - 70), increase lambda weight toward further bit saving
     // Max lambda weight increase: 28 * 28 = 784
     // The multiplier of "28" was derived empirically to allow a smooth bitrate decrease as
@@ -12968,8 +12966,8 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
         // Upper QP cutoff: QP 39 = (63 - QP) * 3
         pcs->lambda_weight = CLIP3(0, 72, MIN(ppcs->picture_qp * 4, (63 - pcs->ppcs->picture_qp) * 3)) + 128;
     }
-    SvtAv1EffectiveQp active_qp = svt_av1_get_effective_qp(scs, ppcs->picture_number);
-    uint32_t active_ext_crf_qindex_offset = active_qp.extended_crf_qindex_offset;
+    SvtAv1EffectiveQp active_qp                    = svt_av1_get_effective_qp(scs, ppcs->picture_number);
+    uint32_t          active_ext_crf_qindex_offset = active_qp.extended_crf_qindex_offset;
     // Extended CRF range (63.25 - 70), increase lambda weight toward further bit saving
     // Max lambda weight increase: 28 * 28 = 784
     // The multiplier of "28" was derived empirically to allow a smooth bitrate decrease as
@@ -13549,8 +13547,8 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
         // Upper QP cutoff: QP 39 = (63 - QP) * 3
         pcs->lambda_weight = CLIP3(0, 72, MIN(ppcs->picture_qp * 4, (63 - pcs->ppcs->picture_qp) * 3)) + 128;
     }
-    SvtAv1EffectiveQp active_qp = svt_av1_get_effective_qp(scs, ppcs->picture_number);
-    uint32_t active_ext_crf_qindex_offset = active_qp.extended_crf_qindex_offset;
+    SvtAv1EffectiveQp active_qp                    = svt_av1_get_effective_qp(scs, ppcs->picture_number);
+    uint32_t          active_ext_crf_qindex_offset = active_qp.extended_crf_qindex_offset;
     // Extended CRF range (63.25 - 70), increase lambda weight toward further bit saving
     // Max lambda weight increase: 28 * 28 = 784
     // The multiplier of "28" was derived empirically to allow a smooth bitrate decrease as

@@ -1115,8 +1115,8 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration* config_ptr) {
     // and no extra ref-buffer memory allocated.
     config_ptr->max_managed_refs = 0;
 
-    config_ptr->quality_zones                     = NULL;
-    config_ptr->num_zones                         = 0;
+    config_ptr->quality_zones = NULL;
+    config_ptr->num_zones     = 0;
     return return_error;
 }
 

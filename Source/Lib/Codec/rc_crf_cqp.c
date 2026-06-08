@@ -466,10 +466,9 @@ void svt_av1_rc_calc_qindex_crf_cqp(PictureControlSet* pcs, SequenceControlSet* 
     QuantizationParams*      q_params = &ppcs->frm_hdr.quantization_params;
 
     SvtAv1EffectiveQp effective_qp = svt_av1_get_effective_qp(scs, ppcs->picture_number);
-    uint8_t           scs_qp       = ppcs->is_startup_gop
-              ? clamp_qp(scs, effective_qp.qp + scs->static_config.startup_qp_offset)
-              : effective_qp.qp;
-    int scs_qindex = clamp_qindex(scs, quantizer_to_qindex[scs_qp] + effective_qp.qindex_offset);
+    uint8_t scs_qp     = ppcs->is_startup_gop ? clamp_qp(scs, effective_qp.qp + scs->static_config.startup_qp_offset)
+                                              : effective_qp.qp;
+    int     scs_qindex = clamp_qindex(scs, quantizer_to_qindex[scs_qp] + effective_qp.qindex_offset);
 
     // if RC mode is 0, fixed QP is used
     // QP scaling based on POC number for Flat IPPP structure
