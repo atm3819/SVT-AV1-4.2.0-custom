@@ -1354,6 +1354,23 @@ void svt_aom_full_cost(PictureControlSet* pcs, ModeDecisionContext* ctx, ModeDec
     const uint8_t skip_coeff_ctx        = ctx->skip_coeff_ctx;
     const bool    update_full_cost_ssim = ctx->tune_ssim_level > SSIM_LVL_0 ? true : false;
 
+#if HDR_CHROMA_LAMBDA_WEIGHT
+    // Emulate a per-component chroma lambda by weighting the chroma distortion
+    // (Q7 weight; equivalent to lambda_chroma = lambda / weight) so the joint
+    // Y/U/V decisions below account for the finer chroma quantization
+    const uint64_t cw_q7 = (uint64_t)pcs->ppcs->hdr_chroma_dist_weight_q7;
+    if (cw_q7 != 128) {
+        for (int i = 0; i < DIST_CALC_TOTAL; i++) {
+            cb_distortion[DIST_SSD][i] = (cb_distortion[DIST_SSD][i] * cw_q7) >> 7;
+            cr_distortion[DIST_SSD][i] = (cr_distortion[DIST_SSD][i] * cw_q7) >> 7;
+            if (update_full_cost_ssim) {
+                cb_distortion[DIST_SSIM][i] = (cb_distortion[DIST_SSIM][i] * cw_q7) >> 7;
+                cr_distortion[DIST_SSIM][i] = (cr_distortion[DIST_SSIM][i] * cw_q7) >> 7;
+            }
+        }
+    }
+#endif
+
     // Get the TX size rate for skip and non-skip block. Need both to make non-skip decision
     uint64_t non_skip_tx_size_bits = 0, skip_tx_size_bits = 0;
     if (!ctx->shut_fast_rate && pcs->ppcs->frm_hdr.tx_mode == TX_MODE_SELECT) {

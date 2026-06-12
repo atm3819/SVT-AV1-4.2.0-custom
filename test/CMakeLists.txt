@@ -60,6 +60,7 @@ endif()
 
 set(arch_neutral_files
     BitstreamWriterTest.cc
+    HdrChromaDeltaQTest.cc
     unit_test.h
     unit_test_utility.c
     unit_test_utility.h

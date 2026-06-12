@@ -76,6 +76,7 @@
 #define CHROMA_U_AC_QINDEX_OFFSET_TOKEN "--chroma-u-ac-qindex-offset"
 #define CHROMA_V_DC_QINDEX_OFFSET_TOKEN "--chroma-v-dc-qindex-offset"
 #define CHROMA_V_AC_QINDEX_OFFSET_TOKEN "--chroma-v-ac-qindex-offset"
+#define HDR_CHROMA_DELTAQ_TOKEN "--hdr-chroma-deltaq"
 
 // scale factors for lambda value for different frame types
 #define LAMBDA_SCALE_FACTORS_TOKEN "--lambda-scale-factors"
@@ -839,6 +840,9 @@ ConfigDescription config_entry_rc[] = {
     {CHROMA_U_AC_QINDEX_OFFSET_TOKEN, "Chroma U AC Qindex Offset"},
     {CHROMA_V_DC_QINDEX_OFFSET_TOKEN, "Chroma V DC Qindex Offset"},
     {CHROMA_V_AC_QINDEX_OFFSET_TOKEN, "Chroma V AC Qindex Offset"},
+    {HDR_CHROMA_DELTAQ_TOKEN,
+     "Enable ITU-T H.Sup15 HDR chroma delta-q, requires PQ (transfer-characteristics 16) 10-bit input, "
+     "default is 0 [0-1]"},
     {LAMBDA_SCALE_FACTORS_TOKEN,
      "list of scale factor for lambda values used for different frame types defined by SvtAv1FrameUpdateType, separated by `,` \
       with each scale factor as integer. \
@@ -1134,6 +1138,7 @@ ConfigEntry config_entry[] = {
     {CHROMA_U_AC_QINDEX_OFFSET_TOKEN, "ChromaUACQindexOffset", set_cfg_generic_token},
     {CHROMA_V_DC_QINDEX_OFFSET_TOKEN, "ChromaVDCQindexOffset", set_cfg_generic_token},
     {CHROMA_V_AC_QINDEX_OFFSET_TOKEN, "ChromaVACQindexOffset", set_cfg_generic_token},
+    {HDR_CHROMA_DELTAQ_TOKEN, "HdrChromaDeltaQ", set_cfg_generic_token},
     {LAMBDA_SCALE_FACTORS_TOKEN, "LambdaScaleFactors", set_cfg_generic_token},
     {UNDER_SHOOT_PCT_TOKEN, "UnderShootPct", set_cfg_generic_token},
     {OVER_SHOOT_PCT_TOKEN, "OverShootPct", set_cfg_generic_token},

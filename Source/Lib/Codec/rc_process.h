@@ -266,6 +266,10 @@ void svt_av1_rc_calc_qindex_rtc_cbr(struct PictureControlSet* pcs);
 void svt_av1_rc_postencode_update_rtc_cbr(struct PictureParentControlSet* ppcs);
 bool svt_av1_rc_recode_decision_rtc_cbr(struct PictureControlSet* pcs);
 
+// HDR chroma delta q (ITU-T H.Sup15 section 8.3.2)
+int8_t svt_aom_get_hdr_chroma_dqp(int32_t base_q_idx, int32_t plane);
+void   svt_aom_apply_hdr_chroma_deltaq(const struct SequenceControlSet* scs, struct PictureParentControlSet* ppcs);
+
 // common stuff
 void    svt_av1_rc_init(struct SequenceControlSet* scs);
 int32_t svt_av1_compute_qdelta(double qstart, double qtarget, EbBitDepth bit_depth);

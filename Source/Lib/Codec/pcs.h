@@ -1157,6 +1157,11 @@ typedef struct PictureParentControlSet {
     int     vmaf_sharpening_amount;
     int32_t vmaf_max_delta;
 #endif
+#if HDR_CHROMA_LAMBDA_WEIGHT
+    // Q7 chroma distortion weight (128 = 1.0) derived from the HDR chroma delta q;
+    // >= 128 since the chroma planes are quantized finer than luma
+    int32_t hdr_chroma_dist_weight_q7;
+#endif
 } PictureParentControlSet;
 
 typedef struct TplDispResults {

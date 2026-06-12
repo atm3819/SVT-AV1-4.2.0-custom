@@ -10,6 +10,7 @@
 * PATENTS file, you can obtain it at https://www.aomedia.org/license/patent-license.
 */
 #include <stdlib.h>
+#include <math.h>
 
 #include "definitions.h"
 #include "enc_handle.h"
@@ -50,6 +51,110 @@ static uint8_t NOINLINE clamp_qp(SequenceControlSet* scs, int qp) {
     int qmin = scs->static_config.min_qp_allowed;
     int qmax = scs->static_config.max_qp_allowed;
     return (uint8_t)CLIP3(qmin, qmax, qp);
+}
+
+/* ITU-T H.Sup15 (01/2017) section 8.3.2: chroma QP offset mapping for HDR/WCG
+ * Y'CbCr 4:2:0 video with PQ transfer characteristics. The recommendation
+ * defines the offset in the HEVC QP domain as
+ *     dQPc = clip(round(1.04 * (-0.46 * QP + 9.26)), -12, 0)
+ * which these constants encode. libaom (av1/encoder/av1_quantize.c,
+ * adjust_hdr_cb_deltaq()/adjust_hdr_cr_deltaq()) applies it to AV1 with the
+ * linear approximation qindex ~= 2 * QP (HDR_QINDEX_PER_QP); that
+ * approximation is only first-order correct, see the LUT comment below.
+ *
+ * NOTE: a spec-literal variant (full offset to AV1's -63 delta_q range, with
+ * the distinct H.Sup15 Cr factor of 1.39) was evaluated and rejected: in
+ * SVT-AV1's luma-dominated RD (no per-component chroma lambda) it spent more
+ * bits for lower chroma PSNR and SSIMULACRA2 at high QP. The libaom-inherited
+ * -24 clamp with c_cb = c_cr = 1.04 below is retained as the better operating
+ * point. */
+#define HDR_CHROMA_QP_SCALE (-0.46)
+#define HDR_CHROMA_QP_OFFSET (9.26)
+#define HDR_CHROMA_CB_QP_SCALE (1.04)
+#define HDR_CHROMA_CR_QP_SCALE (1.04)
+#define HDR_QINDEX_PER_QP (2.0)
+
+#if HDR_CHROMA_DQP_USE_LUT
+/* Exact qindex-domain form of the H.Sup15 mapping above. AV1 qindex has no
+ * closed-form QP expression, but each qindex maps to a quantizer step size
+ * (the 10-bit AC dequant table, ac_qlookup_10_QTX in inv_transforms.c), and
+ * HEVC QP relates to the step size as Qstep = 2^((QP-4)/6). The table below
+ * was built per qindex y as:
+ *   1. QP_eq(y)  = 4 + 6*log2(qstep(y))      with qstep = ac_qlookup_10[y]/32
+ *   2. dQPc      = H.Sup15 offset at QP_eq(y)              (formula above)
+ *   3. lut[y]    = clip(y_c - y, -24, 0)     where y_c is the qindex whose
+ *                                            QP_eq is closest to QP_eq(y)+dQPc
+ * Unlike the qindex ~= 2*QP approximation (which overstates QP by up to 2.5x
+ * at the high end: qindex 255 is QP ~51, not ~127), this applies no offset
+ * below qindex 57 and saturates at -24 from qindex 90. The QP_eq relation was
+ * cross-checked against the HM reference encoder by equal-distortion QP
+ * sampling on identical all-intra content (local slope agreement within
+ * ~15% over qindex 12..204). */
+static const int8_t hdr_chroma_dqp_lut[256] = {
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   -6,  -6,  -6,  -6,  -6,  -6,  -6,  -6,  -7,
+    -7,  -7,  -7,  -7,  -7,  -14, -14, -14, -14, -15, -15, -15, -15, -16, -16, -16, -16, -17, -17, -17, -17, -17,
+    -18, -18, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24,
+    -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24, -24};
+#endif
+
+int8_t svt_aom_get_hdr_chroma_dqp(int32_t base_q_idx, int32_t plane) {
+    assert(plane == PLANE_U || plane == PLANE_V);
+#if HDR_CHROMA_DQP_USE_LUT
+    (void)plane; // the table-derived mapping is identical for Cb and Cr
+    return hdr_chroma_dqp_lut[CLIP3(0, 255, base_q_idx)];
+#else
+    const double base_qp   = base_q_idx / HDR_QINDEX_PER_QP;
+    const double chroma_qp = HDR_CHROMA_QP_SCALE * base_qp + HDR_CHROMA_QP_OFFSET;
+    const double scale     = plane == PLANE_V ? HDR_CHROMA_CR_QP_SCALE : HDR_CHROMA_CB_QP_SCALE;
+    const double dqp_fp    = scale * chroma_qp * HDR_QINDEX_PER_QP;
+    int32_t      dqp       = (int32_t)(dqp_fp + (dqp_fp < 0 ? -0.5 : 0.5));
+    dqp                    = AOMMIN(0, dqp);
+    dqp                    = CLIP3((int32_t)(-12 * HDR_QINDEX_PER_QP), (int32_t)(12 * HDR_QINDEX_PER_QP), dqp);
+    return (int8_t)dqp;
+#endif
+}
+
+/* Derive the per-frame chroma delta-q values from the frame base qindex when
+ * hdr_chroma_deltaq is enabled. Must be (re-)applied whenever base_q_idx
+ * changes; it is a pure function of base_q_idx so re-application is safe. */
+void svt_aom_apply_hdr_chroma_deltaq(const SequenceControlSet* scs, PictureParentControlSet* ppcs) {
+#if HDR_CHROMA_LAMBDA_WEIGHT
+    ppcs->hdr_chroma_dist_weight_q7 = 128; // 1.0 unless the HDR delta q sets it below
+#endif
+    if (!scs->static_config.hdr_chroma_deltaq) {
+        return;
+    }
+    QuantizationParams* q_params = &ppcs->frm_hdr.quantization_params;
+    if (q_params->base_q_idx == 0) {
+        // Lossless frame: chroma delta q must not be applied (see also the
+        // coded_lossless handling in md_config_process.c)
+        q_params->delta_q_dc[PLANE_U] = q_params->delta_q_ac[PLANE_U] = 0;
+        q_params->delta_q_dc[PLANE_V] = q_params->delta_q_ac[PLANE_V] = 0;
+        return;
+    }
+    const int8_t dqp_cb = svt_aom_get_hdr_chroma_dqp(q_params->base_q_idx, PLANE_U);
+    const int8_t dqp_cr = svt_aom_get_hdr_chroma_dqp(q_params->base_q_idx, PLANE_V);
+    // encode_quantization() relies on equal U/V deltas whenever the sequence
+    // header signaled separate_uv_delta_q == 0
+    assert(scs->seq_header.color_config.separate_uv_delta_q || dqp_cb == dqp_cr);
+    q_params->delta_q_dc[PLANE_U] = q_params->delta_q_ac[PLANE_U] = dqp_cb;
+    q_params->delta_q_dc[PLANE_V] = q_params->delta_q_ac[PLANE_V] = dqp_cr;
+#if HDR_CHROMA_LAMBDA_WEIGHT
+    // HM-style per-component distortion weight (m_distortionWeight analog):
+    // weight = 2^(-dQP/3) with dQP in the QP domain (qindex / HDR_QINDEX_PER_QP).
+    // dqp <= 0, so the weight is >= 1.0: chroma is quantized finer than luma and
+    // its distortion should count for more in the joint Y/U/V mode decision.
+    const double dqp_avg            = (dqp_cb + dqp_cr) / 2.0 / HDR_QINDEX_PER_QP;
+    ppcs->hdr_chroma_dist_weight_q7 = (int32_t)(pow(2.0, -dqp_avg / 3.0) * 128.0 + 0.5);
+#endif
 }
 
 int svt_aom_frame_is_kf_gf_arf(PictureParentControlSet* ppcs) {
@@ -839,6 +944,10 @@ EbErrorType svt_aom_rate_control_kernel_iter(void* context) {
                 }
                 svt_av1_rc_calc_qindex_rate_control(pcs, scs);
             }
+            // Derive HDR chroma delta q from the final frame qindex; intentionally
+            // overrides the static and tune-based chroma offsets (libaom semantics).
+            // Must stay before the alt-ref -> overlay quantization_params copy below.
+            svt_aom_apply_hdr_chroma_deltaq(scs, ppcs);
             ppcs->picture_qp = clamp_qp(scs, (ppcs->frm_hdr.quantization_params.base_q_idx + 2) >> 2);
         }
 
@@ -848,6 +957,9 @@ EbErrorType svt_aom_rate_control_kernel_iter(void* context) {
             PictureParentControlSet* overlay_ppcs     = ppcs->overlay_ppcs_ptr;
             overlay_ppcs->picture_qp                  = ppcs->picture_qp;
             overlay_ppcs->frm_hdr.quantization_params = ppcs->frm_hdr.quantization_params;
+#if HDR_CHROMA_LAMBDA_WEIGHT
+            overlay_ppcs->hdr_chroma_dist_weight_q7 = ppcs->hdr_chroma_dist_weight_q7;
+#endif
         }
 
         if (!is_superres_recode_task) {

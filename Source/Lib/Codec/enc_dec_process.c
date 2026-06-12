@@ -2043,6 +2043,9 @@ static void recode_loop_decision_maker(PictureControlSet* pcs, SequenceControlSe
             (int32_t)quantizer_to_qindex[scs->static_config.max_qp_allowed],
             q);
 
+        // base_q_idx changed: re-derive the qindex-dependent HDR chroma delta q
+        svt_aom_apply_hdr_chroma_deltaq(scs, ppcs);
+
         ppcs->picture_qp = (uint8_t)CLIP3((int32_t)scs->static_config.min_qp_allowed,
                                           (int32_t)scs->static_config.max_qp_allowed,
                                           (frm_hdr->quantization_params.base_q_idx + 2) >> 2);

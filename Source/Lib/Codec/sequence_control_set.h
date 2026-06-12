@@ -313,6 +313,17 @@ typedef struct SequenceControlSet {
     bool fast_aa_aware_screen_detection_mode;
 } SequenceControlSet;
 
+/* Single source of truth for the sequence header separate_uv_delta_q flag.
+ * Must stay consistent with every writer of per-frame chroma delta_q values:
+ * when this returns false, all frames must signal identical U and V deltas
+ * (enforced in encode_quantization()). If a feature that can produce
+ * different Cb/Cr deltas is added (e.g. per-component HDR chroma delta-q
+ * constants), it must be OR'ed into this predicate. */
+static inline bool svt_aom_get_separate_uv_delta_q(const SequenceControlSet* scs) {
+    return scs->static_config.chroma_u_ac_qindex_offset != scs->static_config.chroma_v_ac_qindex_offset ||
+        scs->static_config.chroma_u_dc_qindex_offset != scs->static_config.chroma_v_dc_qindex_offset;
+}
+
 typedef struct EbSequenceControlSetInstance {
     EbDctor             dctor;
     EncodeContext*      enc_ctx;

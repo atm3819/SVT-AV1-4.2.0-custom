@@ -763,6 +763,19 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet* scs) {
                  config->matrix_coefficients);
     }
 
+    if (config->hdr_chroma_deltaq) {
+        if (config->transfer_characteristics != EB_CICP_TC_SMPTE_2084 || config->encoder_bit_depth != 10) {
+            SVT_WARN(
+                "hdr-chroma-deltaq requires PQ transfer characteristics (transfer-characteristics 16) and 10-bit "
+                "input; the feature will be disabled.\n");
+        } else if (config->chroma_u_dc_qindex_offset || config->chroma_u_ac_qindex_offset ||
+                   config->chroma_v_dc_qindex_offset || config->chroma_v_ac_qindex_offset) {
+            SVT_WARN(
+                "hdr-chroma-deltaq overrides the static chroma qindex offsets "
+                "(chroma-u/v-dc/ac-qindex-offset) on every frame.\n");
+        }
+    }
+
     if (config->chroma_sample_position < EB_CSP_UNKNOWN || config->chroma_sample_position > EB_CSP_COLOCATED) {
         if (config->chroma_sample_position != EB_CSP_RESERVED) {
             SVT_ERROR("Chroma sample position %d is unknown.\n", config->chroma_sample_position);
@@ -960,6 +973,7 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration* config_ptr) {
     config_ptr->chroma_u_ac_qindex_offset = 0;
     config_ptr->chroma_v_dc_qindex_offset = 0;
     config_ptr->chroma_v_ac_qindex_offset = 0;
+    config_ptr->hdr_chroma_deltaq         = false;
 
     for (int i = 0; i < SVT_AV1_FRAME_UPDATE_TYPES; i++) {
         config_ptr->lambda_scale_factors[i] = 128;
@@ -1274,6 +1288,13 @@ void svt_av1_print_lib_params(SequenceControlSet* scs) {
 
         if (config->hbd_mds) {
             SVT_INFO("SVT [config]: High Bit Depth Mode Decision setting \t\t\t\t\t: %d\n", config->hbd_mds);
+        }
+
+        // ITU-T H.Sup15 section 8.3.2 HDR PQ chroma delta-q. By this point the feature has
+        // already passed (or been disabled by) the PQ/10-bit/lossy gating in copy_api_from_app,
+        // so this line is printed only when the feature is genuinely active.
+        if (config->hdr_chroma_deltaq) {
+            SVT_INFO("SVT [config]: HDR chroma delta-q \t\t\t\t\t\t: %d\n", config->hdr_chroma_deltaq);
         }
     }
 #if DEBUG_BUFFERS
@@ -2472,6 +2493,7 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration* config_
         {"enable-dg", &config_struct->enable_dg},
         {"gop-constraint-rc", &config_struct->gop_constraint_rc},
         {"enable-variance-boost", &config_struct->enable_variance_boost},
+        {"hdr-chroma-deltaq", &config_struct->hdr_chroma_deltaq},
         {"lossless", &config_struct->lossless},
         {"avif", &config_struct->avif},
         {"rtc", &config_struct->rtc},
