@@ -19,6 +19,15 @@
 // Binary search evaluation function type
 typedef double (*arg_eval_fn)(void* ctx, int arg);
 
+// Fraction of the ROI segment model's *incremental* bit cost credited to rate
+// control. The segmented estimate is E = E_uni + w * (E_seg - E_uni), so w is the
+// share of the convex R-Q model's predicted ROI overhead that is charged to the
+// qindex search (see av1_estimate_frame_size). The underlying model bits ~ 1/q^2
+// has no entropy-saturation term, so it overstates the cost of large negative
+// segment deltas; crediting roughly half the predicted increment keeps the actual
+// CBR bitrate within a few percent of the no-ROI bitrate across a target sweep.
+#define ROI_RC_SEG_WEIGHT 0.5
+
 static uint8_t NOINLINE clamp_qindex(SequenceControlSet* scs, int qindex) {
     int qmin = quantizer_to_qindex[scs->static_config.min_qp_allowed];
     int qmax = quantizer_to_qindex[scs->static_config.max_qp_allowed];
@@ -136,11 +145,43 @@ static void rtc_cyclic_refresh_compute_cr_qdeltas(PictureControlSet* pcs, int qi
 }
 
 static int av1_estimate_frame_size(PictureControlSet* pcs, int qindex, double rcf, bool calc_sb_qindex) {
-    CyclicRefresh* cr = &pcs->ppcs->cyclic_refresh;
-    RATE_CONTROL*  rc = &pcs->scs->enc_ctx->rc;
+    CyclicRefresh*         cr  = &pcs->ppcs->cyclic_refresh;
+    RATE_CONTROL*          rc  = &pcs->scs->enc_ctx->rc;
+    const SvtAv1RoiMapEvt* roi = pcs->ppcs->roi_map_evt;
 
     double estimated_size;
-    if (cr->apply_cyclic_refresh) {
+    if (roi != NULL && roi->b64_seg_map != NULL) {
+        // ROI segment-weighted bit estimate: account for the per-segment qindex
+        // deltas so the RTC CBR controller's qindex search picks a base qindex
+        // that hits the target bitrate *with* the ROI map applied (mirrors the
+        // cyclic-refresh path below). Without this the segment deltas are unseen
+        // by rate control and the ROI map overshoots the target.
+        SequenceControlSet* scs                  = pcs->scs;
+        const int           stride               = (scs->max_input_luma_width + 63) / 64;
+        const int           n_b64                = stride * ((scs->max_input_luma_height + 63) / 64);
+        int                 counts[MAX_SEGMENTS] = {0};
+        for (int i = 0; i < n_b64; i++) {
+            uint8_t s = roi->b64_seg_map[i];
+            if (s < MAX_SEGMENTS) {
+                counts[s]++;
+            }
+        }
+        double seg_est = 0.0;
+        for (int s = 0; s <= roi->max_seg_id && s < MAX_SEGMENTS; s++) {
+            if (counts[s] == 0) {
+                continue;
+            }
+            int sq = CLIP3(0, 255, qindex + roi->seg_qp[s]);
+            seg_est += ((double)counts[s] / (double)n_b64) *
+                av1_estimate_bits_at_qindex(pcs, sq, rcf, rc->cur_avg_base_me_dist);
+        }
+        // Credit only ROI_RC_SEG_WEIGHT of the segmented model's incremental cost:
+        // est = uni + w*(seg - uni). The 1/q^2 R-Q model has no entropy saturation
+        // and overstates the bits a large negative delta adds, so charging the full
+        // increment over-raises the base qindex and erases the ROI boost.
+        double uni_est = av1_estimate_bits_at_qindex(pcs, qindex, rcf, rc->cur_avg_base_me_dist);
+        estimated_size = ROI_RC_SEG_WEIGHT * seg_est + (1.0 - ROI_RC_SEG_WEIGHT) * uni_est;
+    } else if (cr->apply_cyclic_refresh) {
         if (calc_sb_qindex) {
             rtc_cyclic_refresh_compute_cr_qdeltas(pcs, qindex, rcf);
         }
