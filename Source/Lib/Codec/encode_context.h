@@ -131,6 +131,7 @@ typedef struct EncodeContext {
     uint32_t elapsed_non_cra_count;
     bool     initial_picture;
     uint64_t last_idr_picture; // the most recently occurred IDR picture (in decode order)
+    bool     pending_forced_kf; // a forced key-frame request deferred by forced_kf_policy==DEFER (RTC pacing)
 
     // Sequence Termination Flags
     uint64_t terminating_picture_number;

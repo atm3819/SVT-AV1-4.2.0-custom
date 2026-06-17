@@ -6044,6 +6044,46 @@ EbErrorType svt_aom_picture_decision_kernel_iter(void* context) {
 
         release_prev_picture_from_reorder_queue(enc_ctx);
 
+        // ---- Key-frame pacing (libaom kf_min_dist-style floor + forced-request policy) ----
+        // enc_ctx->intra_period_position is the number of frames since the last key frame
+        // (it is reset to 0 whenever a key frame is emitted, below). Periodic key frames are
+        // never gated; only scene-change-detected and application-forced requests are.
+        const uint32_t kf_min_interval = scs->static_config.key_frame_min_interval;
+        const bool     kf_pacing_on    = kf_min_interval > 0 || scs->static_config.forced_kf_policy != 0;
+        // intra_period_position reads as (frames-since-last-key-frame - 1) at decision time,
+        // so a key frame placed now would sit (intra_period_position + 1) frames after the
+        // previous one. Allow it only when that gap reaches key_frame_min_interval.
+        const bool kf_too_soon = kf_min_interval > 0 && pcs->picture_number > 0 &&
+            (enc_ctx->intra_period_position + 1) < kf_min_interval;
+        const bool app_forced_kf = pcs->input_ptr->pic_type == EB_AV1_KEY_PICTURE;
+
+        // Scene-change requests obey the floor unconditionally (drop if too soon).
+        const bool scene_kf_req = (pcs->scene_change_flag == true) && !kf_too_soon;
+
+        // Application-forced requests obey forced_kf_policy when they arrive too soon.
+        bool forced_kf_req = app_forced_kf;
+        if (app_forced_kf && kf_too_soon) {
+            switch (scs->static_config.forced_kf_policy) {
+            case 1: // COALESCE: drop the too-soon request
+                forced_kf_req = false;
+                break;
+            case 2: // DEFER: postpone until the floor allows it
+                forced_kf_req              = false;
+                enc_ctx->pending_forced_kf = true;
+                break;
+            default: // 0 HONOR: insert anyway (legacy behavior)
+                forced_kf_req = true;
+                break;
+            }
+        }
+        // Release a previously deferred request once the floor permits it.
+        bool deferred_kf_req = false;
+        if (enc_ctx->pending_forced_kf && !kf_too_soon) {
+            deferred_kf_req            = true;
+            enc_ctx->pending_forced_kf = false;
+        }
+        const bool requested_kf = scene_kf_req || forced_kf_req || deferred_kf_req;
+
         // If the Intra period length is 0, then introduce an intra for every picture
         if (allintra) {
             pcs->idr_flag = true;
@@ -6052,8 +6092,7 @@ EbErrorType svt_aom_picture_decision_kernel_iter(void* context) {
         // If an #IntraPeriodLength has passed since the last Intra, then introduce a CRA or IDR based on Intra Refresh type
         else if (scs->static_config.intra_period_length != -1) {
             pcs->cra_flag = (scs->static_config.intra_refresh_type != SVT_AV1_FWDKF_REFRESH) ? pcs->cra_flag
-                : ((enc_ctx->intra_period_position == (uint32_t)scs->static_config.intra_period_length) ||
-                   (pcs->scene_change_flag == true))
+                : ((enc_ctx->intra_period_position == (uint32_t)scs->static_config.intra_period_length) || scene_kf_req)
                 ? true
                 : pcs->cra_flag;
 
@@ -6063,9 +6102,9 @@ EbErrorType svt_aom_picture_decision_kernel_iter(void* context) {
                                                                                                      true
                                                                                                      : pcs->idr_flag;
         }
-        pcs->idr_flag = (scs->static_config.intra_refresh_type != SVT_AV1_KF_REFRESH)            ? pcs->idr_flag
-            : (pcs->scene_change_flag == true || pcs->input_ptr->pic_type == EB_AV1_KEY_PICTURE) ? true
-                                                                                                 : pcs->idr_flag;
+        pcs->idr_flag = (scs->static_config.intra_refresh_type != SVT_AV1_KF_REFRESH) ? pcs->idr_flag
+            : requested_kf                                                            ? true
+                                                                                      : pcs->idr_flag;
         if (!allintra && pcs->picture_number > 0 && scs->static_config.sframe_posi.sframe_posis &&
             (pcs->cra_flag || pcs->idr_flag)) {
             // if this key frame position is set to an S-frame by sframe-posi, replace this I frame with B frame,
@@ -6090,13 +6129,24 @@ EbErrorType svt_aom_picture_decision_kernel_iter(void* context) {
         enc_ctx->pre_assignment_buffer_idr_count += pcs->idr_flag;
         enc_ctx->pre_assignment_buffer_count += 1;
 
-        // Increment the Intra Period Position
-        enc_ctx->intra_period_position = ((enc_ctx->intra_period_position ==
-                                           (uint32_t)scs->static_config.intra_period_length) ||
-                                          (pcs->scene_change_flag == true) ||
-                                          pcs->input_ptr->pic_type == EB_AV1_KEY_PICTURE)
-            ? 0
-            : enc_ctx->intra_period_position + 1;
+        // Increment the Intra Period Position. When key-frame pacing is active the counter
+        // tracks frames-since-last-emitted-key-frame, so reset only on an actually emitted
+        // intra (a request suppressed by the floor must not reset it). With pacing off the
+        // legacy reset condition is preserved bit-exactly.
+        if (kf_pacing_on) {
+            const bool intra_emitted = pcs->idr_flag || pcs->cra_flag;
+            if (intra_emitted) {
+                enc_ctx->pending_forced_kf = false;
+            }
+            enc_ctx->intra_period_position = intra_emitted ? 0 : enc_ctx->intra_period_position + 1;
+        } else {
+            enc_ctx->intra_period_position = ((enc_ctx->intra_period_position ==
+                                               (uint32_t)scs->static_config.intra_period_length) ||
+                                              (pcs->scene_change_flag == true) ||
+                                              pcs->input_ptr->pic_type == EB_AV1_KEY_PICTURE)
+                ? 0
+                : enc_ctx->intra_period_position + 1;
+        }
 
 #if LAD_MG_PRINT
         print_pre_ass_buffer(enc_ctx, pcs, 1);

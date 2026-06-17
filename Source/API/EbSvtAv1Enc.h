@@ -1041,6 +1041,29 @@ typedef struct EbSvtAv1EncConfiguration {
      */
     uint8_t max_managed_refs;
 
+    /* Minimum number of frames between key frames -- a libaom kf_min_dist-style
+     * floor for RTC / low-delay use. Applies to scene-change-detected and
+     * application-forced key frames; periodic key frames driven by
+     * intra_period_length / --keyint are never gated. A requested key frame
+     * that would land fewer than key_frame_min_interval frames after the
+     * previous key frame is handled per forced_kf_policy (application-forced
+     * requests) or dropped (scene-change requests).
+     *
+     * Default 0: feature disabled, behavior is BIT-EXACT with legacy. */
+    uint32_t key_frame_min_interval;
+
+    /* Policy for application-forced key-frame requests (input pic_type ==
+     * EB_AV1_KEY_PICTURE, or --force-key-frames) that arrive within
+     * key_frame_min_interval frames of the previous key frame. Ignored when
+     * key_frame_min_interval == 0.
+     *
+     * 0 (default): HONOR    - always insert the key frame (legacy behavior).
+     * 1          : COALESCE - drop the too-soon request (collapse a burst of
+     *                         requests into the key frame that already fired).
+     * 2          : DEFER    - postpone the request to the first frame that is
+     *                         >= key_frame_min_interval from the last key frame. */
+    uint8_t forced_kf_policy;
+
     // clang-format off
     /* Add 128 Byte Padding to Struct to avoid changing the size of the public configuration struct */
     uint8_t padding[128
@@ -1050,6 +1073,8 @@ typedef struct EbSvtAv1EncConfiguration {
         - sizeof(uint32_t) * 2 // max intra/inter bitrates
         - sizeof(bool) // enable_intrabc
         - sizeof(uint8_t) // max_managed_refs (ref-frame mgmt)
+        - sizeof(uint32_t) // key_frame_min_interval (RTC key-frame pacing)
+        - sizeof(uint8_t) // forced_kf_policy (RTC key-frame pacing)
     ];
     // clang-format on
 } EbSvtAv1EncConfiguration;

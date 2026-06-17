@@ -135,6 +135,8 @@
 #define TILE_COL_TOKEN "--tile-columns"
 
 #define SCENE_CHANGE_DETECTION_TOKEN "--scd"
+#define KEYINT_MIN_TOKEN "--keyint-min"
+#define FORCED_KF_POLICY_TOKEN "--forced-kf-policy"
 #define INJECTOR_TOKEN "--inj" // no Eval
 #define INJECTOR_FRAMERATE_TOKEN "--inj-frm-rt" // no Eval
 #define ASM_TYPE_TOKEN "--asm"
@@ -903,6 +905,12 @@ ConfigDescription config_entry_intra_refresh[] = {
      "CRF, 0: same as -1]"},
     {INTRA_REFRESH_TYPE_TOKEN, "Intra refresh type, default is 2 [1: FWD Frame (Open GOP), 2: KEY Frame (Closed GOP)]"},
     {SCENE_CHANGE_DETECTION_TOKEN, "Scene change detection control, default is 0 [0-1]"},
+    {KEYINT_MIN_TOKEN,
+     "Minimum frames between key frames; paces scene-change and forced key frames (periodic "
+     "--keyint is never gated), default is 0 [0: off]"},
+    {FORCED_KF_POLICY_TOKEN,
+     "How to handle a forced key frame requested within --keyint-min of the previous key frame, "
+     "default is 0 [0: honor, 1: coalesce/drop, 2: defer]"},
     {LOOKAHEAD_NEW_TOKEN,
      "Number of frames in the future to look ahead, not including minigop, temporal filtering, and "
      "rate control, default is -1 [-1: auto, 0-120]"},
@@ -1158,6 +1166,8 @@ ConfigEntry config_entry[] = {
     {KEYINT_TOKEN, "Keyint", set_cfg_generic_token},
     {INTRA_REFRESH_TYPE_TOKEN, "IntraRefreshType", set_cfg_generic_token},
     {SCENE_CHANGE_DETECTION_TOKEN, "SceneChangeDetection", set_cfg_generic_token},
+    {KEYINT_MIN_TOKEN, "KeyFrameMinInterval", set_cfg_generic_token},
+    {FORCED_KF_POLICY_TOKEN, "ForcedKeyFramePolicy", set_cfg_generic_token},
     {LOOKAHEAD_NEW_TOKEN, "Lookahead", set_cfg_generic_token},
     //   Prediction Structure
     {HIERARCHICAL_LEVELS_TOKEN, "HierarchicalLevels", set_cfg_generic_token},

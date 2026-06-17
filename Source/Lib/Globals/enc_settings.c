@@ -174,6 +174,11 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet* scs) {
                   (unsigned)config->rate_control_mode);
         return_error = EB_ErrorBadParameter;
     }
+    // Key-frame pacing validation.
+    if (config->forced_kf_policy > 2) {
+        SVT_ERROR("forced_kf_policy must be in [0, 2] (got %u)\n", (unsigned)config->forced_kf_policy);
+        return_error = EB_ErrorBadParameter;
+    }
     if (config->rate_control_mode == SVT_AV1_RC_MODE_VBR && config->pred_structure == LOW_DELAY) {
         SVT_ERROR("VBR Rate control is currently not supported for LOW_DELAY, use CBR mode\n");
         return_error = EB_ErrorBadParameter;
@@ -1094,7 +1099,9 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration* config_ptr) {
 
     // Ref-frame management disabled by default → legacy bit-exact behavior
     // and no extra ref-buffer memory allocated.
-    config_ptr->max_managed_refs = 0;
+    config_ptr->max_managed_refs       = 0;
+    config_ptr->key_frame_min_interval = 0;
+    config_ptr->forced_kf_policy       = 0;
 
     return return_error;
 }
@@ -2290,6 +2297,7 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration* config_
         {"fps-denom", &config_struct->frame_rate_denominator},
         {"lookahead", &config_struct->look_ahead_distance},
         {"scd", &config_struct->scene_change_detection},
+        {"keyint-min", &config_struct->key_frame_min_interval},
         {"max-qp", &config_struct->max_qp_allowed},
         {"min-qp", &config_struct->min_qp_allowed},
         {"minsection-pct", &config_struct->vbr_min_section_pct},
@@ -2347,6 +2355,7 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration* config_
         {"enable-tf", &config_struct->enable_tf},
         {"tf-strength", &config_struct->tf_strength},
         {"max-tx-size", &config_struct->max_tx_size},
+        {"forced-kf-policy", &config_struct->forced_kf_policy},
     };
 
     const size_t uint8_opts_size = sizeof(uint8_opts) / sizeof(uint8_opts[0]);
