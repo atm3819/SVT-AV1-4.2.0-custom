@@ -100,8 +100,13 @@ extern "C" {
 #define OPT_MAX_CAN_COUNT_RTC      1 // Derive tighter max_can_count from preset assuming 3L prediction structure
 #define OPT_RTC_M13_FAST           1 // Apply aggressive speed optimizations for the experimental M13 preset
 
-
-#define OPT_USE_HL0_FLAT  1 // Support hierarchical_levels 0 (flat) and 1 in LD CBR and RA 1L referencing
+#define OPT_USE_HL0_FLAT           1 // Support hierarchical_levels 0 (flat) and 1 in LD CBR and RA 1L referencing
+#define ADD_ON_THE_FLY_MG          1 // Support on-the-fly mini-GOP size changes for LOW_DELAY
+#define REMOVE_USE_FLAT_IPP        1 // Use HL0 instead of a separate use_flat_ipp signal
+#define USE_FRAME_TYPE_BOOST       1 // Boost RTC settings using frame type instead of base checks since all pics are base
+#define SHIFT_DPB_TOGGLE           1 // Change lay0_toggle/lay1_toggle to be toggled before updating the refresh mask
+#define OTF_MG_IMMEDIATELY         1 // When on-the-fly MG size is signaled, update the structure immediately, instead of waiting for the next base picture
+#define CLN_REMOVE_RTC_FROM_VBR    1 // Remove RTC checks from rc_vbr_cbr.c since that file is for non-RTC path only.
 
 
 #define OPT_RA_BITRATE             1 // Optimize bitrate for RA (M3/M4/M5)
@@ -130,6 +135,9 @@ extern "C" {
 #define FTR_PRESET_ON_FLY_SAMPLE     0 // Sample functions to change preset on the fly
 #define FTR_FRAME_RATE_ON_FLY_SAMPLE 0 // Sample functions to change frame rate
 #define FTR_PER_FRAME_QUALITY_SAMPLE 0 // Sample functions to compute PSNR per frame
+#if ADD_ON_THE_FLY_MG
+#define FTR_MG_SIZE_ON_FLY_SAMPLE    0 // Sample functions to change mini-GOP size on the fly
+#endif
 #endif
 // Super-resolution debugging code
 #define DEBUG_SCALING           0

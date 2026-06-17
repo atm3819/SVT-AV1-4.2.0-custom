@@ -387,7 +387,11 @@ static EbErrorType load_default_buffer_configuration_settings(SequenceControlSet
         min_child              = 1; // max_child is 1 for LD
         uint8_t max_refs       = dpb_frames;
         // For special, known, RPS structures and ref frame counts, we can reduce the number of ref buffers
+#if REMOVE_USE_FLAT_IPP
+        if (scs->static_config.rtc && scs->static_config.hierarchical_levels == 0) {
+#else
         if (scs->use_flat_ipp) {
+#endif
             max_refs = scs->mrp_ctrls.flat_max_refs;
             // For flat IPP the previous frame is always used as a reference. Therefore, that picture does
             // not require a special buffer for use as a TF ref.
@@ -399,6 +403,10 @@ static EbErrorType load_default_buffer_configuration_settings(SequenceControlSet
         } else if (scs->mrp_ctrls.ld_reduce_ref_buffs == 2) {
             max_refs = 2;
         }
+#if ADD_ON_THE_FLY_MG
+        // Set flat_max_refs in case we switch MG size
+        scs->mrp_ctrls.flat_max_refs = max_refs;
+#endif
 
         min_ref = 1 /*current pic*/ + max_refs;
         // Ref-frame management: app may hold up to max_managed_refs anchors
@@ -1370,7 +1378,11 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
         input_data.hbd_mds             = scs->static_config.hbd_mds;
         input_data.static_config       = scs->static_config;
         input_data.allintra            = scs->allintra;
-        input_data.use_flat_ipp        = scs->use_flat_ipp;
+#if REMOVE_USE_FLAT_IPP
+        input_data.use_flat_ipp = scs->static_config.rtc && scs->static_config.hierarchical_levels == 0;
+#else
+        input_data.use_flat_ipp = scs->use_flat_ipp;
+#endif
         EB_NEW(enc_handle_ptr->picture_parent_control_set_pool_ptr,
                svt_system_resource_ctor,
                scs->picture_control_set_pool_init_count, //enc_handle_ptr->pcs_pool_total_count,
@@ -1430,9 +1442,13 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
         input_data.is_scale         = scs->static_config.superres_mode > SUPERRES_NONE ||
             scs->static_config.resize_mode > RESIZE_NONE;
 
-        input_data.rtc_tune     = scs->static_config.rtc;
-        input_data.allintra     = scs->allintra;
+        input_data.rtc_tune = scs->static_config.rtc;
+        input_data.allintra = scs->allintra;
+#if REMOVE_USE_FLAT_IPP
+        input_data.use_flat_ipp = scs->static_config.rtc && scs->static_config.hierarchical_levels == 0;
+#else
         input_data.use_flat_ipp = scs->use_flat_ipp;
+#endif
         EB_NEW(enc_handle_ptr->enc_dec_pool_ptr,
                svt_system_resource_ctor,
                scs->enc_dec_pool_init_count, //EB_PictureControlSetPoolInitCountChild,
@@ -1476,9 +1492,13 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
         input_data.is_scale         = scs->static_config.superres_mode > SUPERRES_NONE ||
             scs->static_config.resize_mode > RESIZE_NONE;
 
-        input_data.rtc_tune     = scs->static_config.rtc;
-        input_data.allintra     = scs->allintra;
+        input_data.rtc_tune = scs->static_config.rtc;
+        input_data.allintra = scs->allintra;
+#if REMOVE_USE_FLAT_IPP
+        input_data.use_flat_ipp = scs->static_config.rtc && scs->static_config.hierarchical_levels == 0;
+#else
         input_data.use_flat_ipp = scs->use_flat_ipp;
+#endif
         EB_NEW(enc_handle_ptr->picture_control_set_pool_ptr,
                svt_system_resource_ctor,
                scs->picture_control_set_pool_init_count_child, //EB_PictureControlSetPoolInitCountChild,
@@ -3604,7 +3624,11 @@ static void set_mrp_ctrl_with_level(const SequenceControlSet* scs, MrpCtrls* mrp
 #endif
         mrp_ctrl->base_ref_list1_count     = 0;
         mrp_ctrl->non_base_ref_list1_count = 0;
+#if REMOVE_USE_FLAT_IPP
+        if (scs->static_config.rtc && scs->static_config.hierarchical_levels == 0) {
+#else
         if (scs->use_flat_ipp) {
+#endif
             mrp_ctrl->referencing_scheme  = 0;
             mrp_ctrl->more_5L_refs        = 0;
             mrp_ctrl->safe_limit_nref     = 0;
@@ -3613,8 +3637,13 @@ static void set_mrp_ctrl_with_level(const SequenceControlSet* scs, MrpCtrls* mrp
             mrp_ctrl->use_best_references = 0;
         }
     }
+
     if (scs->static_config.pred_structure == LOW_DELAY) {
+#if REMOVE_USE_FLAT_IPP
+        if (scs->static_config.rtc && scs->static_config.hierarchical_levels == 0) {
+#else
         if (scs->use_flat_ipp) {
+#endif
 #if TUNE_SIMPLIFY_SETTINGS
             mrp_ctrl->flat_max_refs = MAX(MAX(mrp_ctrl->base_ref_list0_count, mrp_ctrl->base_ref_list1_count),
                                           MAX(mrp_ctrl->non_base_ref_list0_count, mrp_ctrl->non_base_ref_list1_count));
@@ -3690,7 +3719,11 @@ static void set_mrp_ctrl(const SequenceControlSet* scs, MrpCtrls* mrp_ctrl, EncM
     uint8_t mrp_level;
 #if TUNE_SIMPLIFY_SETTINGS
     if (scs->static_config.rtc) {
+#if REMOVE_USE_FLAT_IPP
+        if (scs->static_config.hierarchical_levels == 0) {
+#else
         if (scs->use_flat_ipp) {
+#endif
 #if TUNE_SHIFT_PRESETS_RTC
             if (enc_mode <= ENC_M8) {
                 mrp_level = 6;
@@ -4502,6 +4535,18 @@ static void set_param_based_on_input(SequenceControlSet* scs) {
     if (scs->static_config.max_managed_refs > 0) {
         const uint8_t safe_pool_size = (uint8_t)svt_numbits(svt_aom_ref_mgmt_storeable_slots_mask(scs));
         if (safe_pool_size < scs->static_config.max_managed_refs) {
+#if REMOVE_USE_FLAT_IPP
+            SVT_ERROR(
+                "LTR invariant: safe-pool %u < max_managed_refs %u "
+                "(ld_reduce=%u list0=%u/%u hier=%u rtc=%u)\n",
+                (unsigned)safe_pool_size,
+                (unsigned)scs->static_config.max_managed_refs,
+                (unsigned)scs->mrp_ctrls.ld_reduce_ref_buffs,
+                (unsigned)scs->mrp_ctrls.base_ref_list0_count,
+                (unsigned)scs->mrp_ctrls.non_base_ref_list0_count,
+                (unsigned)scs->static_config.hierarchical_levels,
+                (unsigned)scs->static_config.rtc);
+#else
             SVT_ERROR(
                 "LTR invariant: safe-pool %u < max_managed_refs %u "
                 "(ld_reduce=%u list0=%u/%u hier=%u flat_ipp=%u)\n",
@@ -4512,6 +4557,7 @@ static void set_param_based_on_input(SequenceControlSet* scs) {
                 (unsigned)scs->mrp_ctrls.non_base_ref_list0_count,
                 (unsigned)scs->static_config.hierarchical_levels,
                 (unsigned)scs->use_flat_ipp);
+#endif
             assert(0 && "LTR safe-pool size < max_managed_refs");
         }
     }
@@ -4741,11 +4787,13 @@ static void copy_api_from_app(SequenceControlSet* scs, EbSvtAv1EncConfiguration*
     scs->static_config.tune                = config_struct->tune;
     scs->static_config.hierarchical_levels = config_struct->hierarchical_levels;
 
+#if !REMOVE_USE_FLAT_IPP
     if (scs->static_config.rtc && scs->static_config.hierarchical_levels == 0) {
         scs->static_config.hierarchical_levels = HIERARCHICAL_LEVELS_AUTO;
         // Mimic flat prediction structure
         scs->use_flat_ipp = 1;
     }
+#endif
     // Set the default hierarchical levels
     if (scs->static_config.hierarchical_levels == HIERARCHICAL_LEVELS_AUTO) {
         scs->static_config.hierarchical_levels = scs->static_config.pred_structure == LOW_DELAY &&
@@ -4777,7 +4825,9 @@ static void copy_api_from_app(SequenceControlSet* scs, EbSvtAv1EncConfiguration*
     if (scs->allintra) {
         scs->static_config.hierarchical_levels = 2;
     }
-    scs->max_temporal_layers                  = scs->static_config.hierarchical_levels;
+#if !ADD_ON_THE_FLY_MG
+    scs->max_temporal_layers = scs->static_config.hierarchical_levels;
+#endif
     scs->static_config.look_ahead_distance    = config_struct->look_ahead_distance;
     scs->static_config.frame_rate_denominator = config_struct->frame_rate_denominator;
     scs->static_config.frame_rate_numerator   = config_struct->frame_rate_numerator;
@@ -5845,6 +5895,22 @@ static EbErrorType validate_on_the_fly_settings(EbBufferHeaderType* input_ptr, S
                 }
             }
         }
+#if ADD_ON_THE_FLY_MG
+        else if (node->node_type == MG_SIZE_CHANGE_EVENT) {
+            SvtAv1MgSizeInfo* node_data = (SvtAv1MgSizeInfo*)node->data;
+            if (!((scs->static_config.pred_structure == LOW_DELAY) &&
+                  (scs->static_config.rate_control_mode == SVT_AV1_RC_MODE_CBR) && scs->static_config.rtc)) {
+                input_ptr->flags = EB_BUFFERFLAG_EOS;
+                SVT_ERROR("MG size change on the fly not supported for any mode other than RTC Low-Delay CBR.\n");
+                return EB_ErrorBadParameter;
+            }
+            if (node_data->hierarchical_levels > 2) {
+                input_ptr->flags = EB_BUFFERFLAG_EOS;
+                SVT_ERROR("Low delay CBR supports hierarchical_levels [0-2].\n");
+                return EB_ErrorBadParameter;
+            }
+        }
+#endif
         node = node->next;
     }
     return EB_ErrorNone;
