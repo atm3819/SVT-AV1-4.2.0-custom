@@ -109,7 +109,8 @@ EbErrorType svt_aom_encode_context_ctor(EncodeContext* enc_ctx, EbPtr object_ini
     EB_CREATE_MUTEX(enc_ctx->total_number_of_shown_frames_mutex);
     EB_CREATE_MUTEX(enc_ctx->ref_pic_list_mutex);
 
-    enc_ctx->initial_picture = true;
+    enc_ctx->initial_picture   = true;
+    enc_ctx->pending_forced_kf = false;
 
     // Sequence Termination Flags
     enc_ctx->terminating_picture_number = ~0u;

@@ -5126,6 +5126,10 @@ static void copy_api_from_app(SequenceControlSet* scs, EbSvtAv1EncConfiguration*
     // Ref-frame management: propagate caller's max-anchors hint (0 = disabled).
     scs->static_config.max_managed_refs = config_struct->max_managed_refs;
 
+    // Key-frame pacing (RTC): min-interval floor + forced-request policy.
+    scs->static_config.key_frame_min_interval = config_struct->key_frame_min_interval;
+    scs->static_config.forced_kf_policy       = config_struct->forced_kf_policy;
+
     // Override settings for Still IQ tune
     if (scs->static_config.tune == TUNE_IQ) {
         SVT_WARN(
