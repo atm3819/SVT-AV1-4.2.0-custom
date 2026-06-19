@@ -137,10 +137,10 @@ void svt_aom_apply_hdr_chroma_deltaq(const SequenceControlSet* scs, PictureParen
     // chroma planes (dqp_cb is a qindex-domain delta, dqp_cb == dqp_cr here).
     // delta <= 0 => chroma is quantized finer => w >= 1.0, so chroma distortion
     // counts for more. No second QP<->qindex round trip.
-    const EbBitDepth bit_depth = scs->static_config.encoder_bit_depth;
-    const double     dc_luma   = svt_aom_dc_quant_qtx(q_params->base_q_idx, 0, bit_depth);
-    const double     dc_chroma = svt_aom_dc_quant_qtx(q_params->base_q_idx, dqp_cb, bit_depth);
-    const double w         = (dc_luma / dc_chroma) * (dc_luma / dc_chroma);
+    const EbBitDepth bit_depth      = scs->static_config.encoder_bit_depth;
+    const double     dc_luma        = svt_aom_dc_quant_qtx(q_params->base_q_idx, 0, bit_depth);
+    const double     dc_chroma      = svt_aom_dc_quant_qtx(q_params->base_q_idx, dqp_cb, bit_depth);
+    const double     w              = (dc_luma / dc_chroma) * (dc_luma / dc_chroma);
     ppcs->hdr_chroma_dist_weight_q7 = (int32_t)(w * 128.0 + 0.5);
 #endif
 }
