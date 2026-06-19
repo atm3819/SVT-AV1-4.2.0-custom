@@ -76,12 +76,10 @@ extern "C" {
 
 #define FIX_MR_STILL_IMAGE         1 // Restore MR for still-image
 
-#define HDR_CHROMA_DQP_USE_LUT   1 // Evaluate the H.Sup15 HDR chroma delta-q at the true per-qindex equivalent QP
-                                   // (derived from the AV1 dequant step tables, see hdr_chroma_dqp_lut in rc_process.c)
-                                   // instead of libaom's linear qindex/2 QP approximation
-#define HDR_CHROMA_LAMBDA_WEIGHT 0 // Experimental: HM-style per-component chroma distortion weighting (m_distortionWeight
-                                   // analog, weight = 2^(-dQPc/3) in Q7) applied in svt_aom_full_cost when hdr-chroma-deltaq
-                                   // is enabled; compensates for the missing per-component lambda in AVx codecs
+#define HDR_CHROMA_LAMBDA_WEIGHT 0 // Experimental: per-component chroma distortion weighting applied in svt_aom_full_cost
+                                   // when hdr-chroma-deltaq is enabled; weight = (dc_quant_qtx(qy)/dc_quant_qtx(qy+delta))^2
+                                   // in Q7, matching SVT-AV1's lambda(qindex) law. Compensates for the missing
+                                   // per-component lambda in AVx codecs
 
 #define FTR_TUNE_VMAF  1 // Implement an unsharp preprocessing filter under TUNE-VMAF (--tune 5)
 #define OPT_TUNE_VMAF  1 // TUNE-VMAF Optimizations: adaptive sharpening (per-QP + spatial MAD), noise gate (Laplacian),
@@ -109,8 +107,6 @@ extern "C" {
 
 
 #define OPT_USE_HL0_FLAT  1 // Support hierarchical_levels 0 (flat) and 1 in LD CBR and RA 1L referencing
-
-#define OPT_RA_BITRATE             1 // Optimize bitrate for RA (M3/M4/M5)
 
 //FOR DEBUGGING - Do not remove
 #define LOG_ENC_DONE            0 // log encoder job one
