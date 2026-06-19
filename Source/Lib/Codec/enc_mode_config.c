@@ -2609,14 +2609,20 @@ uint16_t svt_aom_get_max_can_count(EncMode enc_mode, bool rtc) {
             mem_max_can_count = 150;
         } else if (enc_mode <= ENC_M8) {
             mem_max_can_count = 75;
-        } else if (enc_mode <= ENC_M9) {
-#if FIX_RTC_M9_CAND_CNT
+        } else if (enc_mode <= ENC_M10) {
+#if FIX_RTC_M10_CAND_CNT
             mem_max_can_count = 65;
 #else
-            mem_max_can_count = 50;
+            mem_max_can_count = (enc_mode <= ENC_M9) ? 50 : 25;
 #endif
-        } else if (enc_mode <= ENC_M10) {
-            mem_max_can_count = 25;
+            // NOTE: kept commented per review request since M9 and M10 now share the same settings.
+            // else if (enc_mode <= ENC_M9) {
+            // #if FIX_RTC_M9_CAND_CNT
+            //     mem_max_can_count = 65;
+            // #else
+            //     mem_max_can_count = 50;
+            // #endif
+            // }
         } else if (enc_mode <= ENC_M11) {
             mem_max_can_count = 15;
         } else {
