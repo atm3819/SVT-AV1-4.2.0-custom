@@ -2859,7 +2859,8 @@ static bool me_static_b64_bypass(MeContext* me_ctx, uint32_t b64_origin_x, uint3
 
     me_ctx->zz_sad[0][0]                = zz_sad;
     me_ctx->search_results[0][0].do_ref = 1;
-    memset(me_ctx->p_sb_best_mv[0][0], 0, SQUARE_PU_COUNT * sizeof(uint32_t));
+    // p_sb_best_mv was fully zeroed by init_me_hme_data() before this bypass runs,
+    // so list0/ref0 is already cleared; no per-bypass memset needed.
     // 64x64
     me_ctx->p_sb_best_sad[0][0][RASTER_SCAN_CU_INDEX_64x64] = zz_sad;
     // 32x32
@@ -2905,11 +2906,16 @@ EbErrorType svt_aom_motion_estimation_b64(
 
     //pruning of the references is not done for alt-ref / when HMeLevel2 not done
     uint8_t prune_ref = me_ctx->enable_hme_flag && me_ctx->me_type != ME_MCTF;
+    // Initialize ME/HME buffers. This MUST run for every b64, including the static-b64 bypass
+    // below: init_me_hme_data zeroes the *entire* p_sb_best_mv across all lists/refs (the
+    // "R2R FIX" dirty-MV guard) and resets the per-ref search_results. The bypass only populates
+    // list0/ref0, so without this the other ref/list slots retain a stale MV from a previously
+    // processed b64, which can drive an out-of-bounds reference fetch in inter prediction
+    // (observed as a SIGSEGV in svt_av1_convolve_2d_copy_sr_neon on edge SBs at >=1080p RTC).
+    init_me_hme_data(me_ctx);
 #if OPT_ME_STATIC_B64
     if (!me_static_b64_bypass(me_ctx, b64_origin_x, b64_origin_y)) {
 #endif
-        // Initialize ME/HME buffers
-        init_me_hme_data(me_ctx);
         // HME: Perform Hierarchical Motion Estimation for all reference frames for the current 64x64 block.
         hme_b64(pcs, b64_origin_x, b64_origin_y, me_ctx, input_ptr);
 
