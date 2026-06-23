@@ -151,6 +151,13 @@ typedef struct CdefDirData {
     int32_t var[CDEF_NBLOCKS][CDEF_NBLOCKS];
 } CdefDirData;
 
+// Per-64x64-fb dlist/count computed once by the CDEF search and reused by the apply (SB=64),
+// avoiding a second svt_sb_compute_cdef_list scan. Own allocation (CdefDirData size is layout-sensitive).
+typedef struct CdefFbList {
+    int32_t  cdef_count;
+    CdefList dlist[(64 / 8) * (64 / 8)]; // max 8x8 sub-blocks in a 64x64 fb
+} CdefFbList;
+
 typedef struct PictureControlSet {
     /*!< Pointer to the dtor of the struct*/
     EbDctor                    dctor;
@@ -197,6 +204,19 @@ typedef struct PictureControlSet {
     uint64_t (*mse_seg[2])[TOTAL_STRENGTHS];
     uint8_t*     skip_cdef_seg;
     CdefDirData* cdef_dir_data;
+    CdefFbList*  cdef_fb_list;
+    // Persistent scratch for finish_cdef_search RDO (sized b64_total_count): index list and the
+    // per-sb mse pointer arrays (into mse_seg). Allocated once with the pcs instead of per frame.
+    int32_t*   cdef_sb_index;
+    uint64_t** cdef_mse_ptr[2];
+    // Persistent apply scratch (svt_av1_cdef_frame): line/col border buffers + row-filtered flags,
+    // lazily (re)allocated on grow instead of malloc/free every frame. Sizes track the current alloc.
+    uint16_t*    cdef_linebuf[3];
+    uint16_t*    cdef_colbuf[3];
+    uint8_t*     cdef_row_cdef;
+    uint32_t     cdef_linebuf_sz[3];
+    uint32_t     cdef_colbuf_sz[3];
+    uint32_t     cdef_row_cdef_sz;
     EbByte       cdef_input_recon[3]; // DLF'd recon
     EbByte       cdef_input_source[3]; // Input video
     uint32_t     tot_seg_searched_rest;
