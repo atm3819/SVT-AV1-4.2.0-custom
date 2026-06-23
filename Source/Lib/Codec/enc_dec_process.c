@@ -452,6 +452,29 @@ void svt_aom_recon_output(PictureControlSet* pcs, SequenceControlSet* scs) {
             const uint32_t color_format = recon_ptr->color_format;
             const uint16_t ss_x         = (color_format == EB_YUV444 ? 0 : 1);
             const uint16_t ss_y         = (color_format >= EB_YUV422 ? 0 : 1);
+
+            // If the frame was coded at a reduced resolution (resize), upscale the reconstructed
+            // picture back to full (display) resolution before packing it into the recon output,
+            // mirroring what psnr_calculations()/svt_aom_ssim_calculations() do. Without this the
+            // recon dump was a full-res canvas with the resized frame in one corner and the rest
+            // blank -> garbage when compared against the source (recon PSNR ~9 dB vs the encoder's
+            // reported ~32 dB). Done before film grain so grain is synthesized at display resolution.
+            EbPictureBufferDesc* input_pic      = (EbPictureBufferDesc*)pcs->ppcs->enhanced_unscaled_pic;
+            EbPictureBufferDesc* upscaled_recon = NULL;
+            if (recon_ptr->width != input_pic->width || recon_ptr->height != input_pic->height) {
+                superres_params_type spr_params = {input_pic->width, input_pic->height, 0};
+                svt_aom_downscaled_source_buffer_desc_ctor(&upscaled_recon, recon_ptr, spr_params);
+                svt_aom_resize_frame(recon_ptr,
+                                     upscaled_recon,
+                                     scs->static_config.encoder_bit_depth,
+                                     av1_num_planes(&scs->seq_header.color_config),
+                                     ss_x,
+                                     ss_y,
+                                     recon_ptr->packed_flag,
+                                     PICTURE_BUFFER_DESC_FULL_MASK,
+                                     0); // is_2bcompress
+                recon_ptr = upscaled_recon;
+            }
 #if CONFIG_ENABLE_FILM_GRAIN
             // FGN: Create a buffer if needed, copy the reconstructed picture and run the film grain synthesis algorithm
             if (scs->seq_header.film_grain_params_present && pcs->ppcs->frm_hdr.film_grain_params.apply_grain) {
@@ -490,15 +513,9 @@ void svt_aom_recon_output(PictureControlSet* pcs, SequenceControlSet* scs) {
             // End running the film grain
 #endif
 
-            // set output recon frame size to original size when enable resize feature
-            // easy to display in tool and analysis
+            // recon_ptr is at full (display) resolution here: a resized frame was upscaled above.
             uint16_t recon_w = recon_ptr->width;
             uint16_t recon_h = recon_ptr->height;
-            if (scs->static_config.resize_mode != RESIZE_NONE) {
-                recon_w = recon_ptr->max_width; //ALIGN_POWER_OF_TWO(recon_ptr->width, 3);
-                recon_h = recon_ptr->max_height; //ALIGN_POWER_OF_TWO(recon_ptr->height, 3);
-            }
-            // Keep the recon at full resolution and show the lower resolution video on the top right part
             // Y Recon Samples
             sample_total_count = ((pcs->scs->max_initial_input_luma_width - scs->max_initial_input_pad_right) *
                                   (pcs->scs->max_initial_input_luma_height - scs->max_initial_input_pad_bottom))
@@ -523,7 +540,6 @@ void svt_aom_recon_output(PictureControlSet* pcs, SequenceControlSet* scs) {
             output_recon_ptr->n_filled_len += sample_total_count;
 
             // U Recon Samples
-            // Keep the recon at full resolution and show the lower resolution video on the top right part
             sample_total_count =
                 (((pcs->scs->max_initial_input_luma_width + ss_x - scs->max_initial_input_pad_right) >> ss_x) *
                  ((pcs->scs->max_initial_input_luma_height + ss_y - scs->max_initial_input_pad_bottom) >> ss_y))
@@ -570,23 +586,10 @@ void svt_aom_recon_output(PictureControlSet* pcs, SequenceControlSet* scs) {
             output_recon_ptr->n_filled_len += sample_total_count;
             output_recon_ptr->pts = pcs->picture_number;
 
-            // add metadata of resized frame size to app for rendering
-            if (pcs->ppcs->frame_resize_enabled) {
-                SvtMetadataFrameSizeT frame_size = {0};
-                frame_size.width                 = recon_w;
-                frame_size.height                = recon_h;
-                frame_size.disp_width            = recon_ptr->width;
-                frame_size.disp_height           = recon_ptr->height;
-                frame_size.stride                = recon_w;
-                frame_size.subsampling_x         = ss_x;
-                frame_size.subsampling_y         = ss_y;
-                svt_add_metadata(
-                    output_recon_ptr, EB_AV1_METADATA_TYPE_FRAME_SIZE, (uint8_t*)&frame_size, sizeof(frame_size));
-            }
-
             if (intermediate_buffer_ptr) {
                 EB_DELETE(intermediate_buffer_ptr);
             }
+            EB_DELETE(upscaled_recon);
         }
 
         // Post the Recon object
