@@ -19,13 +19,10 @@
 // Binary search evaluation function type
 typedef double (*arg_eval_fn)(void* ctx, int arg);
 
-// Fraction of the ROI segment model's *incremental* bit cost credited to rate
-// control. The segmented estimate is E = E_uni + w * (E_seg - E_uni), so w is the
-// share of the convex R-Q model's predicted ROI overhead that is charged to the
-// qindex search (see av1_estimate_frame_size). The underlying model bits ~ 1/q^2
-// has no entropy-saturation term, so it overstates the cost of large negative
-// segment deltas; crediting roughly half the predicted increment keeps the actual
-// CBR bitrate within a few percent of the no-ROI bitrate across a target sweep.
+// Fraction of the ROI segment model's incremental bit cost credited to rate control:
+// est = uni + w*(seg - uni). The 1/q^2 R-Q model has no entropy-saturation term, so it
+// overstates the cost of large negative segment deltas; crediting ~half the increment keeps
+// the CBR bitrate close to the no-ROI bitrate.
 #define ROI_RC_SEG_WEIGHT 0.5
 
 static uint8_t NOINLINE clamp_qindex(SequenceControlSet* scs, int qindex) {
@@ -175,10 +172,7 @@ static int av1_estimate_frame_size(PictureControlSet* pcs, int qindex, double rc
             seg_est += ((double)counts[s] / (double)n_b64) *
                 av1_estimate_bits_at_qindex(pcs, sq, rcf, rc->cur_avg_base_me_dist);
         }
-        // Credit only ROI_RC_SEG_WEIGHT of the segmented model's incremental cost:
-        // est = uni + w*(seg - uni). The 1/q^2 R-Q model has no entropy saturation
-        // and overstates the bits a large negative delta adds, so charging the full
-        // increment over-raises the base qindex and erases the ROI boost.
+        // Blend segmented and uniform estimates by ROI_RC_SEG_WEIGHT (see its definition).
         double uni_est = av1_estimate_bits_at_qindex(pcs, qindex, rcf, rc->cur_avg_base_me_dist);
         estimated_size = ROI_RC_SEG_WEIGHT * seg_est + (1.0 - ROI_RC_SEG_WEIGHT) * uni_est;
     } else if (cr->apply_cyclic_refresh) {
