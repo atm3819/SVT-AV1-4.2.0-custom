@@ -15,7 +15,7 @@
 
 #include "aom_dsp_rtcd.h"
 #include "definitions.h"
-#if OPT_TUNE_VMAF
+#if OPT_TUNE_VMAF || OPT_INPUT_NOISE_AWARE_MD
 #include <math.h>
 #include "temporal_filtering.h"
 #endif
@@ -1556,6 +1556,64 @@ bool svt_aom_is_input_grayscale_like(const EbPictureBufferDesc* input_pic) {
 #endif
 #endif
 
+#if OPT_INPUT_NOISE_AWARE_MD
+#define FRAME_INPUT_NOISE_STRENGTH_LVL1_TH 20000
+#define FRAME_INPUT_NOISE_STRENGTH_LVL2_TH 25000
+#define FRAME_INPUT_NOISE_STRENGTH_LVL3_TH 40000
+#define FRAME_INPUT_NOISE_EDGE_GRAD_TH     24
+#define FRAME_INPUT_NOISE_EDGE_LVL1_MAX_PCT 3
+#define FRAME_INPUT_NOISE_EDGE_LVL2_MAX_PCT 5
+#define FRAME_INPUT_NOISE_EDGE_LVL3_MAX_PCT 8
+
+static uint32_t derive_input_noise_edge_pct(const EbPictureBufferDesc* input_pic) {
+    const uint32_t width  = input_pic->width;
+    const uint32_t height = input_pic->height;
+
+    uint32_t edge_cnt   = 0;
+    uint32_t sample_cnt = 0;
+    for (uint32_t y = 1; y < height; y++) {
+        const uint8_t* const cur_row   = input_pic->y_buffer + y * input_pic->y_stride;
+        const uint8_t* const above_row = cur_row - input_pic->y_stride;
+        for (uint32_t x = 1; x < width; x++) {
+            const int32_t horz_grad = ABS((int32_t)cur_row[x] - (int32_t)cur_row[x - 1]);
+            const int32_t vert_grad = ABS((int32_t)cur_row[x] - (int32_t)above_row[x]);
+            edge_cnt += MAX(horz_grad, vert_grad) >= FRAME_INPUT_NOISE_EDGE_GRAD_TH;
+            sample_cnt++;
+        }
+    }
+
+    return (uint32_t)(((uint64_t)edge_cnt * 100 + (sample_cnt >> 1)) / sample_cnt);
+}
+
+// Bucket the log-scaled luma noise estimate while rejecting edge/texture-heavy false positives.
+uint8_t svt_aom_derive_input_noise_strength(const EbPictureBufferDesc* input_pic, int32_t* noise_log1p_fp16) {
+
+    const int32_t noise_fp16 = svt_estimate_noise_fp16(input_pic->y_buffer,
+                                                       (uint16_t)input_pic->width,
+                                                       (uint16_t)input_pic->height,
+                                                       (uint16_t)input_pic->y_stride);
+    if (noise_fp16 <= 0) {
+        return 0;
+    }
+
+    const int32_t noise_log1p = svt_aom_noise_log1p_fp16(noise_fp16);
+    if (noise_log1p_fp16) {
+        *noise_log1p_fp16 = noise_log1p;
+    }
+
+    const uint32_t edge_pct = derive_input_noise_edge_pct(input_pic);
+
+    if (noise_log1p >= FRAME_INPUT_NOISE_STRENGTH_LVL3_TH && edge_pct <= FRAME_INPUT_NOISE_EDGE_LVL3_MAX_PCT) {
+        return 3;
+    } else if (noise_log1p >= FRAME_INPUT_NOISE_STRENGTH_LVL2_TH && edge_pct <= FRAME_INPUT_NOISE_EDGE_LVL2_MAX_PCT) {
+        return 2;
+    } else if (noise_log1p >= FRAME_INPUT_NOISE_STRENGTH_LVL1_TH && edge_pct <= FRAME_INPUT_NOISE_EDGE_LVL1_MAX_PCT) {
+        return 1;
+    }
+    return 0;
+}
+#endif
+
 /************************************************
  * 1/4 & 1/16 input picture downsampling (filtering)
  ************************************************/
@@ -2015,6 +2073,10 @@ EbErrorType svt_aom_picture_analysis_kernel_iter(void* context) {
 #else
     pcs->is_grayscale_like_input = false;
 #endif
+#if OPT_INPUT_NOISE_AWARE_MD
+    pcs->input_noise_level_log1p_fp16 = 0;
+    pcs->input_noise_strength         = 0;
+#endif
 #endif
 
     // Mariana : save enhanced picture ptr, move this from here
@@ -2106,6 +2168,19 @@ EbErrorType svt_aom_picture_analysis_kernel_iter(void* context) {
                 svt_aom_is_screen_content_antialiasing_aware(pcs);
                 break;
             }
+#if OPT_INPUT_CHAR_REFRESH_60F
+            if (svt_aom_input_characterization_refresh_due(pcs)) {
+                // Sample input characterization periodically; PD propagates the cached value between samples.
+                // Luma-dominant detection in MT mode
+                if (scs->detect_luma_dominant_input) {
+                    pcs->is_luma_dominant_input = svt_aom_is_input_luma_dominant(pcs->chroma_downsampled_pic);
+                }
+                if (scs->detect_input_noise_strength) {
+                    pcs->input_noise_strength = svt_aom_derive_input_noise_strength(
+                        input_pic, &pcs->input_noise_level_log1p_fp16);
+                }
+            }
+#else
 #if OPT_LPD1_TX_SKIP_DECISION
 #if OPT_IS_INPUT_LUMA_DOMINANT
             // Luma-dominant detection in MT mode
@@ -2117,6 +2192,13 @@ EbErrorType svt_aom_picture_analysis_kernel_iter(void* context) {
             if (scs->detect_grayscale_like_input) {
                 pcs->is_grayscale_like_input = svt_aom_is_input_grayscale_like(pcs->chroma_downsampled_pic);
             }
+#endif
+#if OPT_INPUT_NOISE_AWARE_MD
+            if (scs->detect_input_noise_strength) {
+                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(
+                    input_pic, &pcs->input_noise_level_log1p_fp16);
+            }
+#endif
 #endif
 #endif
         }

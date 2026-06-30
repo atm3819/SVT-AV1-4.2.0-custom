@@ -236,6 +236,9 @@ typedef struct SequenceControlSet {
 #else
     uint8_t detect_grayscale_like_input;
 #endif
+#if OPT_INPUT_NOISE_AWARE_MD
+    uint8_t detect_input_noise_strength;
+#endif
 #endif
     TfControls tf_params_per_type[3]; // [I_SLICE][BASE][L1]
     MrpCtrls   mrp_ctrls;

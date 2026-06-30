@@ -31,4 +31,17 @@ void svt_aom_downsample_filtering_input_picture(PictureParentControlSet* pcs, Eb
 
 void svt_aom_pad_input_pictures(SequenceControlSet* scs, EbPictureBufferDesc* input_pic);
 
+#if OPT_INPUT_CHAR_REFRESH_60F
+#define INPUT_CHARACTERIZATION_REFRESH_INTERVAL 60
+
+// Share luma/noise input characterization across the next refresh interval.
+static inline bool svt_aom_input_characterization_refresh_due(const PictureParentControlSet* pcs) {
+    return pcs->picture_number % INPUT_CHARACTERIZATION_REFRESH_INTERVAL == 0;
+}
+#endif
+
+#if OPT_INPUT_NOISE_AWARE_MD
+uint8_t svt_aom_derive_input_noise_strength(const EbPictureBufferDesc* input_pic, int32_t* noise_log1p_fp16);
+#endif
+
 #endif // EbPictureAnalysis_h

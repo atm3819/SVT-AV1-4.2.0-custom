@@ -4431,6 +4431,17 @@ static void set_depth_removal_level_controls(PictureControlSet* pcs, ModeDecisio
                     }
                 }
             }
+
+#if OPT_INPUT_NOISE_AWARE_MD
+            if (pcs->scs->detect_input_noise_strength) {
+                const uint8_t input_noise_strength = pcs->ppcs->input_noise_strength;
+
+                dev_32x32_to_16x16_th = dev_32x32_to_16x16_th + 5 * input_noise_strength;
+                dev_16x16_to_8x8_th   = dev_16x16_to_8x8_th + 10 * input_noise_strength;
+
+                qp_scale_factor = MAX(qp_scale_factor + input_noise_strength, 4);
+            }
+#endif
             uint32_t dist_64, dist_32, dist_16, dist_8, me_8x8_cost_variance;
             if (pcs->scs->super_block_size == 64) {
                 dist_64              = pcs->ppcs->me_64x64_distortion[ctx->sb_index];
@@ -14230,11 +14241,23 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
     if (transition_present) {
         pcs->pic_depth_removal_level = 0;
     } else {
+#if OPT_INPUT_NOISE_AWARE_MD
+        if (enc_mode <= ENC_M11) {
+            pcs->pic_depth_removal_level = 0;
+        }
+        else if (enc_mode <= ENC_M12) {
+            pcs->pic_depth_removal_level = 4;
+        }
+        else {
+            pcs->pic_depth_removal_level = 7;
+        }
+#else
         if (enc_mode <= ENC_M12) {
             pcs->pic_depth_removal_level = 0;
         } else {
             pcs->pic_depth_removal_level = 7;
         }
+#endif
     }
 #else
     pcs->pic_depth_removal_level = 0;
