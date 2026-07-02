@@ -139,6 +139,7 @@ typedef struct EncDecSet {
     EbPictureBufferDesc*            recon_pic;
     EbPictureBufferDesc*            recon_pic_16bit;
     EbPictureBufferDesc**           quantized_coeff;
+    SvtPicBufDescPool               quantized_coeff_pool; // backs quantized_coeff[] with one allocation
     EbObjectWrapper*                enc_dec_wrapper;
     struct PictureParentControlSet* ppcs; // The parent of this PCS.
     EbObjectWrapper*                ppcs_wrapper;
@@ -211,19 +212,19 @@ typedef struct PictureControlSet {
     uint64_t** cdef_mse_ptr[2];
     // Persistent apply scratch (svt_av1_cdef_frame): line/col border buffers + row-filtered flags,
     // lazily (re)allocated on grow instead of malloc/free every frame. Sizes track the current alloc.
-    uint16_t*    cdef_linebuf[3];
-    uint16_t*    cdef_colbuf[3];
-    uint8_t*     cdef_row_cdef;
-    uint32_t     cdef_linebuf_sz[3];
-    uint32_t     cdef_colbuf_sz[3];
-    uint32_t     cdef_row_cdef_sz;
-    EbByte       cdef_input_recon[3]; // DLF'd recon
-    EbByte       cdef_input_source[3]; // Input video
-    uint32_t     tot_seg_searched_rest;
-    EbHandle     rest_search_mutex;
-    uint16_t     rest_segments_total_count;
-    uint8_t      rest_segments_column_count;
-    uint8_t      rest_segments_row_count;
+    uint16_t* cdef_linebuf[3];
+    uint16_t* cdef_colbuf[3];
+    uint8_t*  cdef_row_cdef;
+    uint32_t  cdef_linebuf_sz[3];
+    uint32_t  cdef_colbuf_sz[3];
+    uint32_t  cdef_row_cdef_sz;
+    EbByte    cdef_input_recon[3]; // DLF'd recon
+    EbByte    cdef_input_source[3]; // Input video
+    uint32_t  tot_seg_searched_rest;
+    EbHandle  rest_search_mutex;
+    uint16_t  rest_segments_total_count;
+    uint8_t   rest_segments_column_count;
+    uint8_t   rest_segments_row_count;
     // flag to indicate whether the frame is extended for restoration search
     bool rest_extend_flag[3];
 
@@ -237,11 +238,16 @@ typedef struct PictureControlSet {
     uint16_t frame_height;
 
     SuperBlock** sb_ptr_array;
-    uint8_t*     sb_intra;
-    uint8_t*     sb_skip;
-    uint8_t*     sb_64x64_mvp;
-    uint8_t*     sb_min_sq_size;
-    uint8_t*     sb_max_sq_size;
+    // Per-SB block/partition/xd arrays backed by one allocation each across all SBs (borrowed
+    // by each SuperBlock), instead of separate allocations per SB. Freed in the PCS dctor.
+    EcBlkStruct*           sb_final_blk_arr_pool;
+    MacroBlockD*           sb_av1xd_pool;
+    struct PARTITION_TREE* sb_ptree_pool;
+    uint8_t*               sb_intra;
+    uint8_t*               sb_skip;
+    uint8_t*               sb_64x64_mvp;
+    uint8_t*               sb_min_sq_size;
+    uint8_t*               sb_max_sq_size;
     // qindex per 64x64 using ME distortions (to be used for lambda modulation only; not at Q/Q-1)
     // Mode Decision Neighbor Arrays
     uint8_t*            b64_me_qindex;
@@ -443,12 +449,17 @@ typedef struct TileGroupInfo {
 typedef struct MotionEstimationData {
     EbDctor       dctor;
     MeSbResults** me_results;
-    uint16_t      b64_total_count;
-    uint16_t      init_b64_total_count;
-    uint8_t       max_cand; // total max me candidates given the active references
-    uint8_t       max_refs; // total max active references
-    uint8_t       max_l0; // max active refs in L0
-    TplStats**    tpl_stats;
+    // Per-SB ME arrays backed by one allocation each across all SBs (borrowed by each
+    // MeSbResults), instead of 3 allocations per SB. Freed in the parent-PCS dctor.
+    Mv*          me_sb_mv_pool;
+    MeCandidate* me_sb_cand_pool;
+    uint8_t*     me_sb_totidx_pool;
+    uint16_t     b64_total_count;
+    uint16_t     init_b64_total_count;
+    uint8_t      max_cand; // total max me candidates given the active references
+    uint8_t      max_refs; // total max active references
+    uint8_t      max_l0; // max active refs in L0
+    TplStats**   tpl_stats;
 
     TplSrcStats* tpl_src_stats_buffer; // tpl src based stats
 
@@ -460,12 +471,12 @@ typedef struct MotionEstimationData {
 } MotionEstimationData;
 
 typedef struct TplControls {
-    uint8_t              enable; // 0: TPL OFF; 1: TPL ON
-    uint8_t              compute_rate; // 1: use rate 1: no rate
-    uint8_t              enable_tpl_qps; // 0:OFF 1:ON - QPS in TPL
-    uint8_t              disable_intra_pred_nref; // 0:OFF 1:ON - Disable intra prediction in NREF
-    PredictionMode       intra_mode_end; // The MAX intra mode to be tested in TPL
-    TxCoeffShape         pf_shape;
+    uint8_t        enable; // 0: TPL OFF; 1: TPL ON
+    uint8_t        compute_rate; // 1: use rate 1: no rate
+    uint8_t        enable_tpl_qps; // 0:OFF 1:ON - QPS in TPL
+    uint8_t        disable_intra_pred_nref; // 0:OFF 1:ON - Disable intra prediction in NREF
+    PredictionMode intra_mode_end; // The MAX intra mode to be tested in TPL
+    TxCoeffShape   pf_shape;
     // Use SAD as a distortion metric when searching the best mode (based on src pic). If false, will use SATD
     uint8_t use_sad_in_src_search;
     int8_t  reduced_tpl_group;
@@ -1267,7 +1278,8 @@ EbErrorType svt_aom_picture_control_set_creator(EbPtr* object_dbl_ptr, EbPtr obj
 EbErrorType svt_aom_recon_coef_creator(EbPtr* object_dbl_ptr, EbPtr object_init_data_ptr);
 EbErrorType svt_aom_picture_parent_control_set_creator(EbPtr* object_dbl_ptr, EbPtr object_init_data_ptr);
 EbErrorType svt_aom_me_creator(EbPtr* object_dbl_ptr, EbPtr object_init_data_ptr);
-EbErrorType svt_aom_me_sb_results_ctor(MeSbResults* obj_ptr, PictureControlSetInitData* init_data_ptr);
+EbErrorType svt_aom_me_sb_results_ctor(MeSbResults* obj_ptr, PictureControlSetInitData* init_data_ptr,
+                                       MotionEstimationData* me_data, uint16_t sb_index, uint16_t all_sb);
 EbErrorType ppcs_update_param(PictureParentControlSet* ppcs);
 EbErrorType pcs_update_param(PictureControlSet* pcs, int8_t enc_mode);
 EbErrorType me_update_param(MotionEstimationData* me_data, struct SequenceControlSet* scs);
