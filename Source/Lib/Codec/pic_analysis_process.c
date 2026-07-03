@@ -1560,7 +1560,7 @@ bool svt_aom_is_input_grayscale_like(const EbPictureBufferDesc* input_pic) {
 #define FRAME_INPUT_NOISE_STRENGTH_LVL1_TH 20000
 #define FRAME_INPUT_NOISE_STRENGTH_LVL2_TH 25000
 #define FRAME_INPUT_NOISE_STRENGTH_LVL3_TH 40000
-#define FRAME_INPUT_NOISE_EDGE_GRAD_TH     24
+#define FRAME_INPUT_NOISE_EDGE_GRAD_TH 24
 #define FRAME_INPUT_NOISE_EDGE_LVL1_MAX_PCT 3
 #define FRAME_INPUT_NOISE_EDGE_LVL2_MAX_PCT 5
 #define FRAME_INPUT_NOISE_EDGE_LVL3_MAX_PCT 8
@@ -1587,11 +1587,8 @@ static uint32_t derive_input_noise_edge_pct(const EbPictureBufferDesc* input_pic
 
 // Bucket the log-scaled luma noise estimate while rejecting edge/texture-heavy false positives.
 uint8_t svt_aom_derive_input_noise_strength(const EbPictureBufferDesc* input_pic, int32_t* noise_log1p_fp16) {
-
-    const int32_t noise_fp16 = svt_estimate_noise_fp16(input_pic->y_buffer,
-                                                       (uint16_t)input_pic->width,
-                                                       (uint16_t)input_pic->height,
-                                                       (uint16_t)input_pic->y_stride);
+    const int32_t noise_fp16 = svt_estimate_noise_fp16(
+        input_pic->y_buffer, (uint16_t)input_pic->width, (uint16_t)input_pic->height, (uint16_t)input_pic->y_stride);
     if (noise_fp16 <= 0) {
         return 0;
     }
@@ -2176,8 +2173,8 @@ EbErrorType svt_aom_picture_analysis_kernel_iter(void* context) {
                     pcs->is_luma_dominant_input = svt_aom_is_input_luma_dominant(pcs->chroma_downsampled_pic);
                 }
                 if (scs->detect_input_noise_strength) {
-                    pcs->input_noise_strength = svt_aom_derive_input_noise_strength(
-                        input_pic, &pcs->input_noise_level_log1p_fp16);
+                    pcs->input_noise_strength = svt_aom_derive_input_noise_strength(input_pic,
+                                                                                    &pcs->input_noise_level_log1p_fp16);
                 }
             }
 #else
@@ -2195,8 +2192,8 @@ EbErrorType svt_aom_picture_analysis_kernel_iter(void* context) {
 #endif
 #if OPT_INPUT_NOISE_AWARE_MD
             if (scs->detect_input_noise_strength) {
-                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(
-                    input_pic, &pcs->input_noise_level_log1p_fp16);
+                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(input_pic,
+                                                                                &pcs->input_noise_level_log1p_fp16);
             }
 #endif
 #endif

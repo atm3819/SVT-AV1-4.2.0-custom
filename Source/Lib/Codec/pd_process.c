@@ -5424,8 +5424,8 @@ static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSe
 #endif
 #if OPT_INPUT_NOISE_AWARE_MD
             if (scs->detect_input_noise_strength) {
-                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(
-                    pcs->enhanced_pic, &pcs->input_noise_level_log1p_fp16);
+                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(pcs->enhanced_pic,
+                                                                                &pcs->input_noise_level_log1p_fp16);
             }
 #endif
 #endif
@@ -5484,17 +5484,17 @@ static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSe
                 pcs->is_luma_dominant_input = svt_aom_is_input_luma_dominant(pcs->chroma_downsampled_pic);
             }
             if (scs->detect_input_noise_strength) {
-                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(
-                    pcs->enhanced_pic, &pcs->input_noise_level_log1p_fp16);
+                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(pcs->enhanced_pic,
+                                                                                &pcs->input_noise_level_log1p_fp16);
             }
         }
         // Cache the sampled values so non-refresh pictures reuse the same input characterization.
-        ctx->cached_is_luma_dominant_input      = pcs->is_luma_dominant_input;
+        ctx->cached_is_luma_dominant_input       = pcs->is_luma_dominant_input;
         ctx->cached_input_noise_level_log1p_fp16 = pcs->input_noise_level_log1p_fp16;
         ctx->cached_input_noise_strength         = pcs->input_noise_strength;
     } else {
         // PA resets these per picture; restore the latest sampled values until the next refresh frame.
-        pcs->is_luma_dominant_input      = ctx->cached_is_luma_dominant_input;
+        pcs->is_luma_dominant_input       = ctx->cached_is_luma_dominant_input;
         pcs->input_noise_level_log1p_fp16 = ctx->cached_input_noise_level_log1p_fp16;
         pcs->input_noise_strength         = ctx->cached_input_noise_strength;
     }

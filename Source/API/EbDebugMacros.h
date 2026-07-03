@@ -123,7 +123,8 @@ extern "C" {
 #define OPT_LPD1_TX_SKIP_QP_MOD    1 // Add QP-based score bias for low picture QP
 #define OPT_INPUT_NOISE_AWARE_MD   1 // Derive the luma noise strength and use it to adjust ME distortion and MD partition decisions.
 #define OPT_INPUT_CHAR_REFRESH_60F 1 // Refresh luma-dominant/noise input characterization every N frames (N=60)
-
+#define TUNE_RTC_1                 1 // Tune RTC M10 (DLF)
+#define TUNE_RTC_2                 1 // Tune RTC M7 to M12 (HME, LPD1)
 //FOR DEBUGGING - Do not remove
 
 

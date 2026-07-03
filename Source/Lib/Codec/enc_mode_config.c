@@ -2157,6 +2157,7 @@ static uint8_t get_dlf_level_rtc(PictureControlSet* pcs, EncMode enc_mode, int i
 #endif
         dlf_level       = 6;
         modulation_mode = 3;
+#if !TUNE_RTC_1
 #if TUNE_SHIFT_PRESETS_RTC
     } else if (enc_mode <= ENC_M10) {
 #else
@@ -2164,6 +2165,7 @@ static uint8_t get_dlf_level_rtc(PictureControlSet* pcs, EncMode enc_mode, int i
 #endif
         dlf_level       = 7;
         modulation_mode = 3;
+#endif
     } else {
         dlf_level       = 0;
         modulation_mode = 3;
@@ -2986,6 +2988,22 @@ void svt_aom_sig_deriv_multi_processes_rtc(SequenceControlSet* scs, PictureParen
     // to ensure that resources are allocated for the downsampled pictures used in HME
     pcs->enable_hme_flag        = 1;
     pcs->enable_hme_level0_flag = 1;
+
+#if TUNE_RTC_2
+    if (use_flat_ipp) {
+        if (enc_mode <= ENC_M11 ||
+            (enc_mode <= ENC_M12 && scs->detect_input_noise_strength && pcs->input_noise_strength >= 1)) {
+            pcs->enable_hme_level1_flag = 1;
+            pcs->enable_hme_level2_flag = 0;
+        } else {
+            pcs->enable_hme_level1_flag = 0;
+            pcs->enable_hme_level2_flag = 0;
+        }
+    } else {
+        pcs->enable_hme_level1_flag = 1;
+        pcs->enable_hme_level2_flag = 0;
+    }
+#else
     if (use_flat_ipp) {
 #if TUNE_RTC
         if (enc_mode <= ENC_M11) {
@@ -3006,7 +3024,7 @@ void svt_aom_sig_deriv_multi_processes_rtc(SequenceControlSet* scs, PictureParen
         pcs->enable_hme_level1_flag = 1;
         pcs->enable_hme_level2_flag = 0;
     }
-
+#endif
     switch (pcs->tf_ctrls.hme_me_level) {
     case 0:
         pcs->tf_enable_hme_flag        = 1;
@@ -13682,6 +13700,14 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
     }
 
     FrameHeader* frm_hdr = &ppcs->frm_hdr;
+#if 0 //TUNE_RTC_2
+    if (scs->detect_input_noise_strength && ppcs->input_noise_strength >= 1) {
+        frm_hdr->quantization_params.delta_q_ac[PLANE_U] = -12;
+        frm_hdr->quantization_params.delta_q_dc[PLANE_U] = -12;
+        frm_hdr->quantization_params.delta_q_ac[PLANE_V] = -12;
+        frm_hdr->quantization_params.delta_q_dc[PLANE_V] = -12;
+    }
+#endif
 #if OPT_PERIODIC_CDF_UPDATE
 #if FIX_RTC_M13
     if (!frm_hdr->disable_cdf_update) {
@@ -14244,11 +14270,9 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
 #if OPT_INPUT_NOISE_AWARE_MD
         if (enc_mode <= ENC_M11) {
             pcs->pic_depth_removal_level = 0;
-        }
-        else if (enc_mode <= ENC_M12) {
+        } else if (enc_mode <= ENC_M12) {
             pcs->pic_depth_removal_level = 4;
-        }
-        else {
+        } else {
             pcs->pic_depth_removal_level = 7;
         }
 #else
@@ -14284,6 +14308,35 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
         }
     }
 
+#if TUNE_RTC_2
+    const bool noise_detected = scs->detect_input_noise_strength && ppcs->input_noise_strength >= 1;
+    if (enc_mode <= ENC_M7) {
+        pcs->pic_lpd1_lvl = 0;
+    } else if (enc_mode <= ENC_M8) {
+        pcs->pic_lpd1_lvl = is_islice ? 0 : 2;
+    } else if (enc_mode <= ENC_M9) {
+        if (noise_detected) {
+            pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 0 : 3;
+        } else {
+            pcs->pic_lpd1_lvl = is_base ? 0 : 4;
+        }
+    } else if (enc_mode <= ENC_M10) {
+        if (noise_detected) {
+            pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 2 : 3;
+        } else {
+            pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 2 : 5;
+        }
+    } else if (enc_mode <= ENC_M12) {
+        if (noise_detected) {
+            pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 4 : 5;
+        } else {
+            pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 4 : 8;
+        }
+    } else {
+        pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 6 : 8;
+    }
+#else
+
     if (enc_mode <= ENC_M7) {
         pcs->pic_lpd1_lvl = 0;
     } else if (enc_mode <= ENC_M8) {
@@ -14310,6 +14363,7 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
     } else {
         pcs->pic_lpd1_lvl = is_islice ? 0 : is_base ? 4 : 8;
     }
+#endif
 #endif
     // Can only use light-PD1 under the following conditions
     // There is another check before PD1 is called; pred_depth_only is not checked here, because some modes
