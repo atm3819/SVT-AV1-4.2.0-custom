@@ -68,6 +68,7 @@ target_sources(
   PUBLIC sad_neon.c
   PUBLIC selfguided_neon.c
   PUBLIC sse_neon.c
+  PUBLIC ssim_neon.c
   PUBLIC subtract_block_neon.c
   PUBLIC temporal_filtering_neon.c
   PUBLIC transforms_intrin_neon.c
