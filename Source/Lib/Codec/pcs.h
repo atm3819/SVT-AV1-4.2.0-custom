@@ -1008,6 +1008,10 @@ typedef struct PictureParentControlSet {
     // Frame-level grayscale-like hint computed during picture analysis from input chroma
     bool is_grayscale_like_input;
 #endif
+#if OPT_INPUT_NOISE_AWARE_MD
+    int32_t input_noise_level_log1p_fp16;
+    uint8_t input_noise_strength;
+#endif
     SkipModeInfo skip_mode_info;
 
     uint64_t picture_number_alt; // The picture number overlay includes all the overlay frames

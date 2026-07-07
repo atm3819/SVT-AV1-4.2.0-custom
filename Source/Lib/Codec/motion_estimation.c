@@ -2749,6 +2749,17 @@ static void perform_gm_detection(
     }
 }
 
+#if OPT_INPUT_NOISE_AWARE_MD
+static INLINE uint16_t input_noise_me_distortion_weight_pct(uint8_t input_noise_strength) {
+    static const uint16_t weight_pct[4] = {100, 250, 500, 750};
+    return weight_pct[MIN(input_noise_strength, 3)];
+}
+
+static INLINE uint32_t input_noise_weighted_me_distortion(uint32_t dist, uint16_t weight_pct) {
+    return (uint32_t)(((uint64_t)dist * weight_pct + 50) / 100);
+}
+#endif
+
 // Compute the distortion per block size based on the ME results
 static void compute_distortion(
     PictureParentControlSet* pcs, // input parameter, Picture Control Set Ptr
@@ -2760,6 +2771,15 @@ static void compute_distortion(
     B64Geom* b64_geom   = &pcs->b64_geom[b64_index];
     uint32_t b64_size   = 64 * 64;
     uint32_t dist_64x64 = 0, dist_32x32 = 0, dist_16x16 = 0, dist_8x8 = 0;
+#if OPT_INPUT_NOISE_AWARE_MD
+    if (scs->detect_input_noise_strength) {
+        const uint16_t noise_weight_pct = input_noise_me_distortion_weight_pct(pcs->input_noise_strength);
+        // Weight all square-PU distortions before publishing the aggregate ME signals consumed by MD.
+        for (unsigned i = 0; i < SQUARE_PU_COUNT; i++) {
+            me_ctx->me_distortion[i] = input_noise_weighted_me_distortion(me_ctx->me_distortion[i], noise_weight_pct);
+        }
+    }
+#endif
 
     // 64x64
     { dist_64x64 = me_ctx->me_distortion[0]; }
@@ -2785,12 +2805,13 @@ static void compute_distortion(
         const int64_t diff = ((int64_t)me_ctx->me_distortion[21 + i] - (int64_t)mean_dist_8x8);
         sum_ofsq_dist_8x8 += diff * diff;
     }
-
-    pcs->me_8x8_cost_variance[b64_index] = (uint32_t)(sum_ofsq_dist_8x8 / 64);
+    uint32_t me_8x8_cost_variance = (uint32_t)(sum_ofsq_dist_8x8 / 64);
     // Compute the sum of the distortion of all 16 16x16 (720 and above) and
     // 64 8x8 (for lower resolutions) blocks in the SB
     pcs->rc_me_distortion[b64_index] = (scs->input_resolution <= INPUT_SIZE_480p_RANGE) ? dist_8x8 : dist_16x16;
     const uint32_t pix_num           = b64_geom->width * b64_geom->height;
+
+    pcs->me_8x8_cost_variance[b64_index] = me_8x8_cost_variance;
     // Normalize
     pcs->me_64x64_distortion[b64_index] = (dist_64x64 * b64_size) / (pix_num);
     pcs->me_32x32_distortion[b64_index] = (dist_32x32 * b64_size) / (pix_num);

@@ -4590,6 +4590,9 @@ static void set_param_based_on_input(SequenceControlSet* scs) {
         scs->detect_grayscale_like_input = true;
     }
 #endif
+#if OPT_INPUT_NOISE_AWARE_MD
+    scs->detect_input_noise_strength = scs->static_config.rtc;
+#endif
 #endif
     scs->resize_pending_params.resize_state = ORIG;
     scs->resize_pending_params.resize_denom = SCALE_NUMERATOR;

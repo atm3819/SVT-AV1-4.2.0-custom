@@ -258,6 +258,15 @@ EbErrorType svt_aom_picture_decision_context_ctor(EbThreadContext* thread_ctx, c
 
     pd_ctx->mg_progress_id                    = 0;
     pd_ctx->last_i_noise_levels_log1p_fp16[0] = 0;
+#if OPT_INPUT_CHAR_REFRESH_60F
+    pd_ctx->cached_input_noise_level_log1p_fp16 = 0;
+    pd_ctx->cached_input_noise_strength         = 0;
+#else
+#if OPT_INPUT_NOISE_AWARE_MD
+    pd_ctx->last_i_input_noise_level_log1p_fp16 = 0;
+    pd_ctx->last_i_input_noise_strength         = 0;
+#endif
+#endif
     pd_ctx->transition_detected               = -1;
     pd_ctx->sframe_poc                        = 0;
     pd_ctx->sframe_due                        = 0;
@@ -5363,9 +5372,15 @@ static void set_mini_gop_structure(SequenceControlSet* scs, EncodeContext* enc_c
 
     get_pred_struct_for_all_frames(ctx, enc_ctx);
 }
-
+#if OPT_INPUT_CHAR_REFRESH_60F
+// Set input-content classification signals; ST mode performs screen-content detection here.
+static void perform_input_content_detection(SequenceControlSet* scs, PictureParentControlSet* pcs,
+                                            PictureDecisionContext* ctx) {
+    const bool refresh_input_characterization = svt_aom_input_characterization_refresh_due(pcs);
+#else
 // Set whether the picture is to be considered as SC; for single-threaded mode we perform SC detection here
 static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSet* pcs, PictureDecisionContext* ctx) {
+#endif
     if (pcs->slice_type == I_SLICE) {
         // If running multi-threaded mode, perform SC detection in svt_aom_picture_analysis_kernel, else in svt_aom_picture_decision_kernel
         if (scs->static_config.level_of_parallelism == 1) {
@@ -5395,6 +5410,7 @@ static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSe
                 svt_aom_is_screen_content_antialiasing_aware(pcs);
                 break;
             }
+#if !OPT_INPUT_CHAR_REFRESH_60F
 #if OPT_LPD1_TX_SKIP_DECISION
 #if OPT_IS_INPUT_LUMA_DOMINANT
             // Luma-dominant detection in ST mode
@@ -5406,6 +5422,13 @@ static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSe
                 pcs->is_grayscale_like_input = svt_aom_is_input_grayscale_like(pcs->chroma_downsampled_pic);
             }
 #endif
+#if OPT_INPUT_NOISE_AWARE_MD
+            if (scs->detect_input_noise_strength) {
+                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(pcs->enhanced_pic,
+                                                                                &pcs->input_noise_level_log1p_fp16);
+            }
+#endif
+#endif
 #endif
         }
         ctx->last_i_picture_sc_class0 = pcs->sc_class0;
@@ -5416,11 +5439,17 @@ static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSe
 #if TUNE_SIMPLIFY_SETTINGS
         ctx->last_i_picture_sc_class5 = pcs->sc_class5;
 #endif
+#if !OPT_INPUT_CHAR_REFRESH_60F
 #if OPT_LPD1_TX_SKIP_DECISION
 #if OPT_IS_INPUT_LUMA_DOMINANT
         ctx->last_i_is_luma_dominant_input = pcs->is_luma_dominant_input;
 #else
         ctx->last_i_picture_grayscale_like_input = pcs->is_grayscale_like_input;
+#endif
+#if OPT_INPUT_NOISE_AWARE_MD
+        ctx->last_i_input_noise_level_log1p_fp16 = pcs->input_noise_level_log1p_fp16;
+        ctx->last_i_input_noise_strength         = pcs->input_noise_strength;
+#endif
 #endif
 #endif
     } else {
@@ -5432,14 +5461,44 @@ static void perform_sc_detection(SequenceControlSet* scs, PictureParentControlSe
 #if TUNE_SIMPLIFY_SETTINGS
         pcs->sc_class5 = ctx->last_i_picture_sc_class5;
 #endif
+#if !OPT_INPUT_CHAR_REFRESH_60F
 #if OPT_LPD1_TX_SKIP_DECISION
 #if OPT_IS_INPUT_LUMA_DOMINANT
         pcs->is_luma_dominant_input = ctx->last_i_is_luma_dominant_input;
 #else
         pcs->is_grayscale_like_input = ctx->last_i_picture_grayscale_like_input;
 #endif
+#if OPT_INPUT_NOISE_AWARE_MD
+        pcs->input_noise_level_log1p_fp16 = ctx->last_i_input_noise_level_log1p_fp16;
+        pcs->input_noise_strength         = ctx->last_i_input_noise_strength;
+#endif
+#endif
 #endif
     }
+#if OPT_INPUT_CHAR_REFRESH_60F
+    if (refresh_input_characterization) {
+        if (scs->static_config.level_of_parallelism == 1) {
+            // ST mode samples luma/noise characterization here; MT mode samples it in PA.
+            // Luma-dominant detection in ST mode
+            if (scs->detect_luma_dominant_input) {
+                pcs->is_luma_dominant_input = svt_aom_is_input_luma_dominant(pcs->chroma_downsampled_pic);
+            }
+            if (scs->detect_input_noise_strength) {
+                pcs->input_noise_strength = svt_aom_derive_input_noise_strength(pcs->enhanced_pic,
+                                                                                &pcs->input_noise_level_log1p_fp16);
+            }
+        }
+        // Cache the sampled values so non-refresh pictures reuse the same input characterization.
+        ctx->cached_is_luma_dominant_input       = pcs->is_luma_dominant_input;
+        ctx->cached_input_noise_level_log1p_fp16 = pcs->input_noise_level_log1p_fp16;
+        ctx->cached_input_noise_strength         = pcs->input_noise_strength;
+    } else {
+        // PA resets these per picture; restore the latest sampled values until the next refresh frame.
+        pcs->is_luma_dominant_input       = ctx->cached_is_luma_dominant_input;
+        pcs->input_noise_level_log1p_fp16 = ctx->cached_input_noise_level_log1p_fp16;
+        pcs->input_noise_strength         = ctx->cached_input_noise_strength;
+    }
+#endif
 }
 
 // Update pred struct info and pic type for non-overlay pictures
@@ -6320,8 +6379,11 @@ EbErrorType svt_aom_picture_decision_kernel_iter(void* context) {
                     } else {
                         pcs->decode_order = pcs->picture_number_alt;
                     }
-
+#if OPT_INPUT_CHAR_REFRESH_60F
+                    perform_input_content_detection(scs, pcs, ctx);
+#else
                     perform_sc_detection(scs, pcs, ctx);
+#endif
                     // Update the RC param queue
                     update_rc_param_queue(pcs, enc_ctx);
                     // Reset the PA Reference Lists

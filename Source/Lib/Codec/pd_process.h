@@ -108,11 +108,22 @@ typedef struct PictureDecisionContext {
 #if TUNE_SIMPLIFY_SETTINGS
     uint8_t last_i_picture_sc_class5;
 #endif
+#if OPT_INPUT_CHAR_REFRESH_60F
+    // Cached input characterization sampled every INPUT_CHARACTERIZATION_REFRESH_INTERVAL frames.
+    bool    cached_is_luma_dominant_input;
+    int32_t cached_input_noise_level_log1p_fp16;
+    uint8_t cached_input_noise_strength;
+#else
 #if OPT_LPD1_TX_SKIP_DECISION
 #if OPT_IS_INPUT_LUMA_DOMINANT
     bool last_i_is_luma_dominant_input;
 #else
     bool last_i_picture_grayscale_like_input;
+#endif
+#if OPT_INPUT_NOISE_AWARE_MD
+    int32_t last_i_input_noise_level_log1p_fp16;
+    uint8_t last_i_input_noise_strength;
+#endif
 #endif
 #endif
     uint64_t                 last_long_base_pic;
