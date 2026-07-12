@@ -321,9 +321,9 @@ typedef struct PictureControlSet {
     uint8_t new_nearest_near_comb_injection;
     uint8_t unipred3x3_injection;
     uint8_t bipred3x3_injection;
-    uint8_t inter_compound_mode;
-    uint8_t dist_based_ref_pruning;
-    uint8_t spatial_sse_full_loop_level;
+    uint8_t  inter_compound_mode;
+    uint8_t  dist_based_ref_pruning;
+    uint8_t  spatial_sse_full_loop_level;
     uint8_t  inter_intra_level;
     uint8_t  txs_level;
     uint8_t  nic_level;

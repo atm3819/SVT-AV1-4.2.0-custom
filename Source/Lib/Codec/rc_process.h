@@ -106,8 +106,8 @@ typedef struct {
 } ResizePendingParams;
 
 typedef struct RATE_CONTROL {
-    int    last_boosted_qindex; // Last boosted GF/KF/ARF q
-    int    gfu_boost;
+    int     last_boosted_qindex; // Last boosted GF/KF/ARF q
+    int     gfu_boost;
     int     kf_boost;
     double  rate_correction_factors[MAX_TEMPORAL_LAYERS + 1];
     int     baseline_gf_interval;

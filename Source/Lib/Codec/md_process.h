@@ -1133,9 +1133,9 @@ typedef struct ModeDecisionContext {
     RefResults             ref_filtering_res[TOT_INTER_GROUP][MAX_NUM_OF_REF_PIC_LIST][REF_LIST_MAX_DEPTH];
     RefPruningControls     ref_pruning_ctrls;
     // Signal to control initial and final pass PD setting(s)
-    PdPass              pd_pass;
-    CflCtrls            cfl_ctrls;
-    TxsControls         txs_ctrls;
+    PdPass               pd_pass;
+    CflCtrls             cfl_ctrls;
+    TxsControls          txs_ctrls;
     TxtControls          txt_ctrls;
     CandReductionCtrls   cand_reduction_ctrls;
     NsqGeomCtrls         nsq_geom_ctrls;
