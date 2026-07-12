@@ -315,9 +315,9 @@ typedef struct PictureControlSet {
     uint8_t nsq_search_level;
     uint8_t txt_level;
     uint8_t tx_shortcut_level;
-    uint8_t interpolation_search_level;
-    uint8_t chroma_level;
-    uint8_t cfl_level;
+    uint8_t  interpolation_search_level;
+    uint8_t  chroma_level;
+    uint8_t  cfl_level;
     uint8_t  new_nearest_near_comb_injection;
     uint8_t  unipred3x3_injection;
     uint8_t  bipred3x3_injection;

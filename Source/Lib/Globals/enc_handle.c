@@ -1325,9 +1325,9 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
         input_data.picture_width       = scs->max_input_luma_width;
         input_data.picture_height      = scs->max_input_luma_height;
         input_data.border              = scs->border;
-        input_data.color_format        = color_format;
-        input_data.b64_size            = scs->b64_size;
-        input_data.enc_mode            = scs->static_config.enc_mode;
+        input_data.color_format         = color_format;
+        input_data.b64_size             = scs->b64_size;
+        input_data.enc_mode             = scs->static_config.enc_mode;
         input_data.hbd_md               = scs->enable_hbd_mode_decision;
         input_data.bit_depth            = scs->static_config.encoder_bit_depth;
         input_data.log2_tile_rows       = scs->static_config.tile_rows;
