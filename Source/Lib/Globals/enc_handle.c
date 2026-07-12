@@ -1322,9 +1322,9 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
     {
         // The segment Width & Height Arrays are in units of SBs, not samples
         PictureControlSetInitData input_data;
-        input_data.picture_width       = scs->max_input_luma_width;
-        input_data.picture_height      = scs->max_input_luma_height;
-        input_data.border              = scs->border;
+        input_data.picture_width        = scs->max_input_luma_width;
+        input_data.picture_height       = scs->max_input_luma_height;
+        input_data.border               = scs->border;
         input_data.color_format         = color_format;
         input_data.b64_size             = scs->b64_size;
         input_data.enc_mode             = scs->static_config.enc_mode;
