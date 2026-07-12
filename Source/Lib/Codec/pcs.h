@@ -309,9 +309,9 @@ typedef struct PictureControlSet {
     // needed for 8x8 NSQ blocks).  Used to compute the offset for mip.
     uint8_t disallow_4x4_all_frames;
     uint8_t disallow_8x8_all_frames;
-    uint8_t wm_level; // warped motion level
-    uint8_t cand_reduction_level;
-    uint8_t nsq_geom_level;
+    uint8_t  wm_level; // warped motion level
+    uint8_t  cand_reduction_level;
+    uint8_t  nsq_geom_level;
     uint8_t  nsq_search_level;
     uint8_t  txt_level;
     uint8_t  tx_shortcut_level;
