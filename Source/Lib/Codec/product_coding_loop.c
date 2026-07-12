@@ -2580,7 +2580,7 @@ static uint32_t md_subpel_search_fixed_stage(ModeDecisionContext* ctx, const EbP
     const AomVarianceFnPtr* fn_ptr     = &svt_aom_mefn_ptr[ctx->blk_geom->bsize];
     const int               mv_x_fp    = me_mv->x;
     const int               mv_y_fp    = me_mv->y;
-    const uint16_t          bias_fp = ctx->md_subpel_me_ctrls.bias_fp;
+    const uint16_t          bias_fp    = ctx->md_subpel_me_ctrls.bias_fp;
 
     static const int8_t hpel_dx[4] = {4, -4, 0, 0};
     static const int8_t hpel_dy[4] = {0, 0, 4, -4};
@@ -2612,7 +2612,7 @@ static uint32_t md_subpel_search_fixed_stage(ModeDecisionContext* ctx, const EbP
     }
     // half-pel neighbors
     for (int i = 0; i < 4; ++i) {
-        const int subx = (mv_x_fp + hpel_dx[i]) & 7;
+        const int      subx = (mv_x_fp + hpel_dx[i]) & 7;
         const int      suby = (mv_y_fp + hpel_dy[i]) & 7;
         const int      fp_x = blk_org_x + ((mv_x_fp + hpel_dx[i]) >> 3);
         const int      fp_y = blk_org_y + ((mv_y_fp + hpel_dy[i]) >> 3);
@@ -2640,9 +2640,9 @@ static uint32_t md_subpel_search_fixed_stage(ModeDecisionContext* ctx, const EbP
         static const int8_t qpel_dy[4] = {0, 0, 2, -2};
 
         for (int i = 0; i < 4; ++i) {
-            const int tot_dx = best_dx + qpel_dx[i];
-            const int tot_dy = best_dy + qpel_dy[i];
-            const int subx   = (mv_x_fp + tot_dx) & 7;
+            const int      tot_dx = best_dx + qpel_dx[i];
+            const int      tot_dy = best_dy + qpel_dy[i];
+            const int      subx   = (mv_x_fp + tot_dx) & 7;
             const int      suby   = (mv_y_fp + tot_dy) & 7;
             const int      fp_x   = blk_org_x + ((mv_x_fp + tot_dx) >> 3);
             const int      fp_y   = blk_org_y + ((mv_y_fp + tot_dy) >> 3);

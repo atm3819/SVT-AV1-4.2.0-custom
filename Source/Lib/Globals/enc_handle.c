@@ -1334,9 +1334,9 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
         input_data.log2_tile_cols      = scs->static_config.tile_columns;
         input_data.log2_sb_size        = (scs->super_block_size == 128) ? 5 : 4;
         input_data.is_16bit_pipeline   = scs->is_16bit_pipeline;
-        input_data.non_m8_pad_w        = scs->max_input_pad_right;
-        input_data.non_m8_pad_h        = scs->max_input_pad_bottom;
-        input_data.enable_tpl_la       = scs->tpl;
+        input_data.non_m8_pad_w         = scs->max_input_pad_right;
+        input_data.non_m8_pad_h         = scs->max_input_pad_bottom;
+        input_data.enable_tpl_la        = scs->tpl;
         input_data.enc_dec_segment_col  = (uint16_t)scs->tpl_segment_col_count_array;
         input_data.enc_dec_segment_row  = (uint16_t)scs->tpl_segment_row_count_array;
         MrpCtrls* mrp_ctrl              = &(scs->mrp_ctrls);

@@ -60,7 +60,7 @@ typedef struct ResourceCoordinationContext {
     bool     start_flag;
 
     // Sequence Parameter Change Flags
-    bool seq_param_change;
+    bool     seq_param_change;
     bool     video_res_change;
     bool     bitrate_changed;
     bool     frame_rate_changed;

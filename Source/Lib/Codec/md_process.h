@@ -1136,9 +1136,9 @@ typedef struct ModeDecisionContext {
     PdPass              pd_pass;
     CflCtrls            cfl_ctrls;
     TxsControls         txs_ctrls;
-    TxtControls         txt_ctrls;
-    CandReductionCtrls  cand_reduction_ctrls;
-    NsqGeomCtrls        nsq_geom_ctrls;
+    TxtControls          txt_ctrls;
+    CandReductionCtrls   cand_reduction_ctrls;
+    NsqGeomCtrls         nsq_geom_ctrls;
     NsqSearchCtrls       nsq_search_ctrls;
     DepthEarlyExitCtrls  depth_early_exit_ctrls;
     RdoqCtrls            rdoq_ctrls;

@@ -324,9 +324,9 @@ typedef struct PictureControlSet {
     uint8_t inter_compound_mode;
     uint8_t dist_based_ref_pruning;
     uint8_t spatial_sse_full_loop_level;
-    uint8_t inter_intra_level;
-    uint8_t txs_level;
-    uint8_t nic_level;
+    uint8_t  inter_intra_level;
+    uint8_t  txs_level;
+    uint8_t  nic_level;
     uint8_t  md_sq_mv_search_level;
     uint8_t  md_nsq_mv_search_level;
     uint8_t  md_pme_level;
@@ -339,7 +339,7 @@ typedef struct PictureControlSet {
     uint8_t  rate_est_level;
     uint8_t  intra_level;
     uint8_t  dist_based_ang_intra_level;
-    uint8_t pic_disallow_4x4; // disallow 4x4 at pic level
+    uint8_t  pic_disallow_4x4; // disallow 4x4 at pic level
     // depth_removal_level signal at the picture level
     uint8_t pic_depth_removal_level;
     // block_based_depth_refinement_level signal set at the picture level

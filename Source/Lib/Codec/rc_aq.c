@@ -299,7 +299,7 @@ void svt_aom_cyclic_refresh_setup(PictureParentControlSet* ppcs) {
     cr->me_distortion[1] = 0;
     cr->me_distortion[2] = 0;
 
-    cr->actual_num_seg1_sbs = 0;
+    cr->actual_num_seg1_sbs     = 0;
     cr->actual_num_seg2_sbs     = 0;
     uint64_t seg2_dist          = 0;
     uint64_t avg_me_dist        = ppcs->norm_me_dist;
