@@ -307,8 +307,8 @@ typedef struct PictureControlSet {
     int32_t mi_stride;
     // true if 4x4 blocks are disallowed for all frames, and NSQ is disabled (since granularity is
     // needed for 8x8 NSQ blocks).  Used to compute the offset for mip.
-    uint8_t disallow_4x4_all_frames;
-    uint8_t disallow_8x8_all_frames;
+    uint8_t  disallow_4x4_all_frames;
+    uint8_t  disallow_8x8_all_frames;
     uint8_t  wm_level; // warped motion level
     uint8_t  cand_reduction_level;
     uint8_t  nsq_geom_level;
