@@ -109,6 +109,8 @@ extern "C" {
 #define OPT_USE_HL0_FLAT  1 // Support hierarchical_levels 0 (flat) and 1 in LD CBR and RA 1L referencing
 
 //FOR DEBUGGING - Do not remove
+
+
 #define LOG_ENC_DONE            0 // log encoder job one
 #define DEBUG_TPL               0 // Prints to debug TPL
 #define DETAILED_FRAME_OUTPUT   0 // Prints detailed frame output from the library for debugging
@@ -128,6 +130,7 @@ extern "C" {
 #define FTR_PRESET_ON_FLY_SAMPLE     0 // Sample functions to change preset on the fly
 #define FTR_FRAME_RATE_ON_FLY_SAMPLE 0 // Sample functions to change frame rate
 #define FTR_PER_FRAME_QUALITY_SAMPLE 0 // Sample functions to compute PSNR per frame
+#define FTR_MG_SIZE_ON_FLY_SAMPLE    0 // Sample functions to change mini-GOP size on the fly
 #endif
 // Super-resolution debugging code
 #define DEBUG_SCALING           0
