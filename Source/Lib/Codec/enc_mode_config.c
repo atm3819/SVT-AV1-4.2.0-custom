@@ -285,7 +285,8 @@ static void set_me_search_params(SequenceControlSet* scs, PictureParentControlSe
 
     // Set the min and max ME search area
     if (rtc_tune) {
-        if (enc_mode <= ENC_M10) {
+        const bool use_flat_ipp = pcs->hierarchical_levels == 0;
+        if (enc_mode <= ENC_M10 || (enc_mode == ENC_M11 && !use_flat_ipp)) {
             if (input_resolution < INPUT_SIZE_1080p_RANGE) {
                 me_ctx->me_sa.sa_min = (SearchArea){24, 16};
                 me_ctx->me_sa.sa_max = (SearchArea){32, 16};
@@ -726,7 +727,7 @@ void svt_aom_sig_deriv_me(SequenceControlSet* scs, PictureParentControlSet* pcs,
     if (rtc_tune) {
         if (enc_mode <= ENC_M8) {
             prehme_level = 2;
-        } else if (enc_mode <= ENC_M10) {
+        } else if (enc_mode <= ENC_M10 || (enc_mode == ENC_M11 && !use_flat_ipp)) {
             prehme_level = 4;
         } else {
             prehme_level = 0;
@@ -2862,14 +2863,11 @@ void svt_aom_sig_deriv_pre_analysis_scs(SequenceControlSet* scs, int8_t enc_mode
 * false -- reference picture not exist or in difference frame size
 */
 bool svt_aom_is_ref_same_size(PictureControlSet* pcs, uint8_t list_idx, uint8_t ref_idx) {
-    // skip the checking if reference scaling and super-res are disabled
-    if (pcs->ppcs->is_not_scaled) {
-        return true;
-    }
     if (pcs->slice_type != B_SLICE) {
         return false;
     }
-    if (pcs->ref_pic_ptr_array[list_idx][ref_idx] == NULL) {
+    int ref_count = (list_idx == REF_LIST_0) ? pcs->ppcs->ref_list0_count_try : pcs->ppcs->ref_list1_count_try;
+    if (ref_count == 0 || pcs->ref_pic_ptr_array[list_idx][ref_idx] == NULL) {
         return false;
     }
 
@@ -3173,7 +3171,7 @@ static void set_depth_removal_level_controls(PictureControlSet* pcs, ModeDecisio
                 const bool is_ref_l0_avail = svt_aom_is_ref_same_size(pcs, REF_LIST_0, 0);
                 const bool is_ref_l1_avail = svt_aom_is_ref_same_size(pcs, REF_LIST_1, 0);
 
-                if (pcs->slice_type != I_SLICE && is_ref_l0_avail) {
+                if (is_ref_l0_avail) {
                     EbReferenceObject* ref_obj_l0 =
                         (EbReferenceObject*)pcs->ref_pic_ptr_array[REF_LIST_0][0]->object_ptr;
 
@@ -3183,7 +3181,7 @@ static void set_depth_removal_level_controls(PictureControlSet* pcs, ModeDecisio
                         sb_min_sq_size = ref_obj_l0->sb_min_sq_size[ctx->sb_index];
                     }
 
-                    if (pcs->slice_type == B_SLICE && is_ref_l1_avail && pcs->ppcs->ref_list1_count_try) {
+                    if (is_ref_l1_avail) {
                         EbReferenceObject* ref_obj_l1 =
                             (EbReferenceObject*)pcs->ref_pic_ptr_array[REF_LIST_1][0]->object_ptr;
 
@@ -7386,7 +7384,6 @@ void svt_aom_sig_deriv_enc_dec_light_pd1_default(PictureControlSet* pcs, ModeDec
     Pd1Level                 lpd1_level       = ctx->lpd1_ctrls.pd1_level;
     PictureParentControlSet* ppcs             = pcs->ppcs;
     const ResolutionRange    input_resolution = ppcs->input_resolution;
-    const SliceType          slice_type       = pcs->slice_type;
     // Get ref info, used to set some feature levels
     const uint32_t picture_qp           = ppcs->picture_qp;
     uint32_t       me_8x8_cost_variance = (uint32_t)~0;
@@ -7408,7 +7405,7 @@ void svt_aom_sig_deriv_enc_dec_light_pd1_default(PictureControlSet* pcs, ModeDec
         EbReferenceObject* ref_obj_l0 = (EbReferenceObject*)pcs->ref_pic_ptr_array[REF_LIST_0][0]->object_ptr;
         l0_was_skip = ref_obj_l0->sb_skip[ctx->sb_index], l1_was_skip = 1;
         l0_was_64x64_mvp = ref_obj_l0->sb_64x64_mvp[ctx->sb_index], l1_was_64x64_mvp = 1;
-        if (slice_type == B_SLICE && is_ref_l1_avail && pcs->ppcs->ref_list1_count_try) {
+        if (is_ref_l1_avail) {
             EbReferenceObject* ref_obj_l1 = (EbReferenceObject*)pcs->ref_pic_ptr_array[REF_LIST_1][0]->object_ptr;
             l1_was_skip                   = ref_obj_l1->sb_skip[ctx->sb_index];
             l1_was_64x64_mvp              = ref_obj_l1->sb_64x64_mvp[ctx->sb_index];
@@ -7587,7 +7584,6 @@ void svt_aom_sig_deriv_enc_dec_light_pd1_rtc(PictureControlSet* pcs, ModeDecisio
     PictureParentControlSet* ppcs         = pcs->ppcs;
     const EncMode            enc_mode     = pcs->enc_mode;
     uint8_t                  use_flat_ipp = pcs->ppcs->hierarchical_levels == 0;
-    const SliceType          slice_type   = pcs->slice_type;
     // Get ref info, used to set some feature levels
     const uint32_t picture_qp           = ppcs->picture_qp;
     uint32_t       me_8x8_cost_variance = (uint32_t)~0;
@@ -7608,7 +7604,7 @@ void svt_aom_sig_deriv_enc_dec_light_pd1_rtc(PictureControlSet* pcs, ModeDecisio
         EbReferenceObject* ref_obj_l0 = (EbReferenceObject*)pcs->ref_pic_ptr_array[REF_LIST_0][0]->object_ptr;
         l0_was_skip = ref_obj_l0->sb_skip[ctx->sb_index], l1_was_skip = 1;
         l0_was_64x64_mvp = ref_obj_l0->sb_64x64_mvp[ctx->sb_index], l1_was_64x64_mvp = 1;
-        if (slice_type == B_SLICE && is_ref_l1_avail && pcs->ppcs->ref_list1_count_try) {
+        if (is_ref_l1_avail) {
             EbReferenceObject* ref_obj_l1 = (EbReferenceObject*)pcs->ref_pic_ptr_array[REF_LIST_1][0]->object_ptr;
             l1_was_skip                   = ref_obj_l1->sb_skip[ctx->sb_index];
             l1_was_64x64_mvp              = ref_obj_l1->sb_64x64_mvp[ctx->sb_index];
@@ -9549,7 +9545,7 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
         pcs->coeff_shaving_level = 1;
     }
     if (enc_mode <= ENC_M10) {
-        pcs->rate_est_level = 1;
+        pcs->rate_est_level = (ppcs->hierarchical_levels == 1 && enc_mode == ENC_M10) ? 0 : 1;
     } else {
         pcs->rate_est_level = 0;
     }
@@ -9846,10 +9842,16 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
         pcs->pic_lpd1_lvl = is_base ? 0 : (lpd1_low_var ? 3 : 4);
     } else if (enc_mode <= ENC_M11) {
         pcs->pic_lpd1_lvl = is_base ? 2 : (lpd1_low_var ? 3 : 5);
-    } else if (enc_mode <= ENC_M12 || lpd1_ultra_low_var) {
+    } else if (enc_mode <= ENC_M12) {
         pcs->pic_lpd1_lvl = is_base ? 4 : (lpd1_low_var ? 5 : 8);
+        if (is_base && ppcs->hierarchical_levels == 1) {
+            pcs->pic_lpd1_lvl = 5;
+        }
     } else {
-        pcs->pic_lpd1_lvl = is_base ? (lpd1_low_var ? 4 : 6) : (lpd1_low_var ? 6 : 8);
+        pcs->pic_lpd1_lvl = is_base ? (lpd1_low_var ? 4 : 6) : (lpd1_ultra_low_var ? 5 : lpd1_low_var ? 6 : 8);
+        if (is_base && ppcs->hierarchical_levels == 1) {
+            pcs->pic_lpd1_lvl = 6;
+        }
     }
     // Can only use light-PD1 under the following conditions
     // There is another check before PD1 is called; pred_depth_only is not checked here, because some modes
