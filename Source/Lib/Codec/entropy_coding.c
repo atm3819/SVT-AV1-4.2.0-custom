@@ -2670,10 +2670,11 @@ static void write_profile(BitstreamProfile profile, AomWriteBitBuffer* wb) {
 static AOM_INLINE void write_bitdepth(const SequenceControlSet* const scs, AomWriteBitBuffer* wb) {
     // Profile 0/1: [0] for 8 bit, [1]  10-bit
     // Profile   2: [0] for 8 bit, [10] 10-bit, [11] - 12-bit
-    svt_aom_wb_write_bit(wb, scs->static_config.encoder_bit_depth == EB_EIGHT_BIT ? 0 : 1);
-    if (scs->static_config.profile == PROFESSIONAL_PROFILE && scs->static_config.encoder_bit_depth != EB_EIGHT_BIT) {
+    svt_aom_wb_write_bit(wb, SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) == EB_EIGHT_BIT ? 0 : 1);
+    if (scs->static_config.profile == PROFESSIONAL_PROFILE &&
+        SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) != EB_EIGHT_BIT) {
         SVT_ERROR("Profile 2 Not supported\n");
-        svt_aom_wb_write_bit(wb, scs->static_config.encoder_bit_depth == EB_TEN_BIT ? 0 : 1);
+        svt_aom_wb_write_bit(wb, SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) == EB_TEN_BIT ? 0 : 1);
     }
 }
 
@@ -2706,7 +2707,7 @@ static AOM_INLINE void write_color_config(const SequenceControlSet* const scs, A
         scs->static_config.matrix_coefficients == EB_CICP_MC_IDENTITY) {
         /* assert(scs->subsampling_x == 0 && scs->subsampling_y == 0);
         assert(scs->static_config.profile == HIGH_PROFILE ||
-               (scs->static_config.profile == PROFESSIONAL_PROFILE && scs->encoder_bit_depth == EB_TWELVE_BIT)); */
+               (scs->static_config.profile == PROFESSIONAL_PROFILE && SVT_EFFECTIVE_BIT_DEPTH(scs->encoder_bit_depth) == EB_TWELVE_BIT)); */
     } else {
         // 0: [16, 235] (i.e. xvYCC), 1: [0, 255]
         svt_aom_wb_write_bit(wb, scs->static_config.color_range);
@@ -2717,7 +2718,7 @@ static AOM_INLINE void write_color_config(const SequenceControlSet* const scs, A
             // 444 only
             assert(scs->subsampling_x == 0 && scs->subsampling_y == 0);
         } else if (scs->static_config.profile == PROFESSIONAL_PROFILE) {
-            if (scs->encoder_bit_depth == EB_TWELVE_BIT) {
+            if (SVT_EFFECTIVE_BIT_DEPTH(scs->encoder_bit_depth) == EB_TWELVE_BIT) {
                 // 420, 444 or 422
                 svt_aom_wb_write_bit(wb, scs->subsampling_x);
                 if (scs->subsampling_x == 0) {
@@ -4420,7 +4421,7 @@ static INLINE int max_block_wide(const MacroBlockD* xd, BlockSize bsize, int pla
     int max_blocks_wide = block_size_wide[bsize];
 
     if (xd->mb_to_right_edge < 0) {
-        max_blocks_wide += gcc_right_shift(xd->mb_to_right_edge, 3 + !!plane);
+        max_blocks_wide += xd->mb_to_right_edge >> (3 + !!plane);
     }
 
     // Scale the width in the transform block unit.
@@ -4431,7 +4432,7 @@ static INLINE int max_block_high(const MacroBlockD* xd, BlockSize bsize, int pla
     int max_blocks_high = block_size_high[bsize];
 
     if (xd->mb_to_bottom_edge < 0) {
-        max_blocks_high += gcc_right_shift(xd->mb_to_bottom_edge, 3 + !!plane);
+        max_blocks_high += xd->mb_to_bottom_edge >> (3 + !!plane);
     }
 
     // Scale the height in the transform block unit.
