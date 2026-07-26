@@ -1198,8 +1198,8 @@ static int create_tpl_ref_buf_descs(EbEncHandle* enc_handle_ptr) {
 static int create_ref_buf_descs(EbEncHandle* enc_handle_ptr) {
     EbReferenceObjectDescInitData eb_ref_obj_ect_desc_init_data_structure;
     EbPictureBufferDescInitData   ref_pic_buf_desc_init_data;
-    SequenceControlSet*           scs      = enc_handle_ptr->scs_instance->scs;
-    bool                          is_16bit = scs->static_config.encoder_bit_depth > EB_EIGHT_BIT;
+    SequenceControlSet*           scs = enc_handle_ptr->scs_instance->scs;
+    bool is_16bit                     = SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) > EB_EIGHT_BIT;
     // Initialize the various Picture types
     ref_pic_buf_desc_init_data.max_width           = scs->max_input_luma_width;
     ref_pic_buf_desc_init_data.max_height          = scs->max_input_luma_height;
@@ -1215,7 +1215,7 @@ static int create_ref_buf_descs(EbEncHandle* enc_handle_ptr) {
 
     ref_pic_buf_desc_init_data.border            = padding;
     ref_pic_buf_desc_init_data.mfmv              = scs->mfmv_enabled;
-    ref_pic_buf_desc_init_data.is_16bit_pipeline = scs->is_16bit_pipeline;
+    ref_pic_buf_desc_init_data.is_16bit_pipeline = SVT_EFFECTIVE_IS_16BIT_PIPELINE(scs->is_16bit_pipeline);
     // Hsan: split_mode is set @ eb_reference_object_ctor() as both unpacked reference and packed reference are needed for a 10BIT input; unpacked reference @ MD, and packed reference @ EP
 
     ref_pic_buf_desc_init_data.split_mode = false;
@@ -1272,12 +1272,18 @@ void init_ii_masks(void);
 static ONCE_ROUTINE(init_global_tables) {
     svt_aom_asm_set_convolve_asm_table();
     svt_aom_init_intra_dc_predictors_c_internal();
+#if CONFIG_ENABLE_HIGH_BIT_DEPTH
     svt_aom_asm_set_convolve_hbd_asm_table();
+#endif
     svt_aom_init_intra_predictors_internal();
     svt_av1_init_me_luts();
     init_fn_ptr();
+#if CONFIG_ENABLE_INTER_COMPOUND
     svt_av1_init_wedge_masks();
+#endif
+#if CONFIG_ENABLE_INTER_INTRA
     init_ii_masks();
+#endif
     svt_av1_crc32c_table_init();
     ONCE_ROUTINE_EPILOG;
 }
@@ -1333,7 +1339,7 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
         input_data.log2_tile_rows       = scs->static_config.tile_rows;
         input_data.log2_tile_cols       = scs->static_config.tile_columns;
         input_data.log2_sb_size         = (scs->super_block_size == 128) ? 5 : 4;
-        input_data.is_16bit_pipeline    = scs->is_16bit_pipeline;
+        input_data.is_16bit_pipeline    = SVT_EFFECTIVE_IS_16BIT_PIPELINE(scs->is_16bit_pipeline);
         input_data.non_m8_pad_w         = scs->max_input_pad_right;
         input_data.non_m8_pad_h         = scs->max_input_pad_bottom;
         input_data.enable_tpl_la        = scs->tpl;
@@ -1346,7 +1352,7 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
                                                           svt_aom_get_tpl_group_level(1, scs->static_config.enc_mode),
                                                           input_data.picture_width,
                                                           input_data.picture_height);
-        input_data.aq_mode        = scs->static_config.aq_mode;
+        input_data.aq_mode              = scs->static_config.aq_mode;
 
         input_data.calculate_variance = scs->calculate_variance;
         input_data.calc_hist = scs->calc_hist = scs->allintra == false &&
@@ -1415,7 +1421,7 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
                 ->object_ptr;
         input_data.tile_row_count    = parent_pcs->av1_cm->tiles_info.tile_rows;
         input_data.tile_column_count = parent_pcs->av1_cm->tiles_info.tile_cols;
-        input_data.is_16bit_pipeline = scs->is_16bit_pipeline;
+        input_data.is_16bit_pipeline = SVT_EFFECTIVE_IS_16BIT_PIPELINE(scs->is_16bit_pipeline);
         input_data.av1_cm            = parent_pcs->av1_cm;
         input_data.enc_mode          = scs->static_config.enc_mode;
 
@@ -1460,7 +1466,7 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component) {
                 ->object_ptr;
         input_data.tile_row_count    = parent_pcs->av1_cm->tiles_info.tile_rows;
         input_data.tile_column_count = parent_pcs->av1_cm->tiles_info.tile_cols;
-        input_data.is_16bit_pipeline = scs->is_16bit_pipeline;
+        input_data.is_16bit_pipeline = SVT_EFFECTIVE_IS_16BIT_PIPELINE(scs->is_16bit_pipeline);
         input_data.av1_cm            = parent_pcs->av1_cm;
         input_data.enc_mode          = scs->static_config.enc_mode;
         input_data.static_config     = scs->static_config;
@@ -3486,6 +3492,17 @@ static void set_mrp_ctrl_with_level(const SequenceControlSet* scs, MrpCtrls* mrp
     } else {
         mrp_ctrl->ld_reduce_ref_buffs = 0;
     }
+#if !CONFIG_ENABLE_INTER_COMPOUND
+    // Compound prediction is disabled in this build, so the compound (jnt) convolve
+    // path is stripped (inter_prediction.c). That is only safe if no block can ever
+    // have a 2nd reference, i.e. single-reference only. If this fires, an RTC preset
+    // was retuned to use >1 reference while compound is compiled out -> re-enable
+    // CONFIG_ENABLE_INTER_COMPOUND or keep RTC single-ref.
+    if (scs->static_config.rtc) {
+        assert(mrp_ctrl->base_ref_list0_count <= 1 && mrp_ctrl->non_base_ref_list0_count <= 1 &&
+               mrp_ctrl->base_ref_list1_count == 0 && mrp_ctrl->non_base_ref_list1_count == 0);
+    }
+#endif
 }
 
 // Preset-driven entry point for setting mrp_ctrl. Owns the
@@ -3501,10 +3518,8 @@ static void set_mrp_ctrl(const SequenceControlSet* scs, MrpCtrls* mrp_ctrl, EncM
                 mrp_level = 0;
             }
         } else {
-            if (enc_mode <= ENC_M9) {
+            if (enc_mode <= ENC_M8) {
                 mrp_level = 6;
-            } else if (enc_mode <= ENC_M10) {
-                mrp_level = 9;
             } else {
                 mrp_level = 0;
             }
@@ -3523,7 +3538,7 @@ static void set_mrp_ctrl(const SequenceControlSet* scs, MrpCtrls* mrp_ctrl, EncM
         } else if (enc_mode <= ENC_M9) {
             mrp_level = scs->static_config.pred_structure == RANDOM_ACCESS ? 7 : 9;
         } else {
-            if (scs->static_config.encoder_bit_depth == EB_EIGHT_BIT) {
+            if (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) == EB_EIGHT_BIT) {
                 mrp_level = scs->static_config.pred_structure == RANDOM_ACCESS ? 11 : 0;
             } else {
                 mrp_level = scs->static_config.pred_structure == RANDOM_ACCESS ? 7 : 0;
@@ -4137,7 +4152,7 @@ static void set_param_based_on_input(SequenceControlSet* scs) {
 
     //for 10bit,  increase the pad of source from 68 to 72 (mutliple of 8) to accomodate 2bit-compression flow
     //we actually need to change the horizontal dimension only, but for simplicity/uniformity we do all directions
-    // if (scs->static_config.encoder_bit_depth != EB_EIGHT_BIT)
+    // if (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) != EB_EIGHT_BIT)
     { scs->border += 4; }
 
     scs->static_config.enable_overlays = !scs->static_config.enable_tf ||
@@ -4179,7 +4194,7 @@ static void set_param_based_on_input(SequenceControlSet* scs) {
         scs->enable_dg = scs->static_config.enable_dg;
     }
     // Set hbd_md OFF for high encode modes or bitdepth < 10
-    if (scs->static_config.encoder_bit_depth < 10) {
+    if (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) < 10) {
         scs->enable_hbd_mode_decision = 0;
     }
 
@@ -4411,7 +4426,7 @@ static void copy_api_from_app(SequenceControlSet* scs, EbSvtAv1EncConfiguration*
     scs->static_config.fgs_table              = config_struct->fgs_table;
 
     // MD Parameters
-    scs->enable_hbd_mode_decision = config_struct->encoder_bit_depth > 8 ? DEFAULT : 0;
+    scs->enable_hbd_mode_decision = SVT_EFFECTIVE_BIT_DEPTH(config_struct->encoder_bit_depth) > 8 ? DEFAULT : 0;
     {
         if (config_struct->tile_rows == DEFAULT && config_struct->tile_columns == DEFAULT) {
             scs->static_config.tile_rows    = 0;
@@ -5031,7 +5046,7 @@ static EbErrorType downsample_copy_frame_buffer(SequenceControlSet* scs, uint8_t
     const uint32_t chroma_width  = (luma_width + subsampling_x) >> subsampling_x;
     const uint32_t chroma_height = (luma_height + subsampling_y) >> subsampling_y;
 
-    if (scs->static_config.encoder_bit_depth == EB_EIGHT_BIT) {
+    if (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) == EB_EIGHT_BIT) {
         downsample_2d_c_skipall(input_ptr->luma,
                                 input_ptr->y_stride,
                                 luma_width << 1,
@@ -5127,7 +5142,7 @@ static EbErrorType copy_frame_buffer(SequenceControlSet* scs, uint8_t* destinati
     const uint32_t chroma_width  = (luma_width + subsampling_x) >> subsampling_x;
     const uint32_t chroma_height = (luma_height + subsampling_y) >> subsampling_y;
 
-    if (scs->static_config.encoder_bit_depth == EB_EIGHT_BIT) {
+    if (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) == EB_EIGHT_BIT) {
         svt_av1_copy_wxh_8bit(input_ptr->luma,
                               input_ptr->y_stride,
                               y8b_input_picture_ptr->y_buffer,
@@ -5214,7 +5229,7 @@ static EbErrorType copy_private_data_list(EbBufferHeaderType* dst, EbBufferHeade
 EbErrorType svt_input_buffer_header_update(EbBufferHeaderType* input_buffer, SequenceControlSet* scs, bool noy8b) {
     EbPictureBufferDescInitData input_pic_buf_desc_init_data;
     EbSvtAv1EncConfiguration*   config   = &scs->static_config;
-    uint8_t                     is_16bit = config->encoder_bit_depth > 8 ? 1 : 0;
+    uint8_t                     is_16bit = SVT_EFFECTIVE_BIT_DEPTH(config->encoder_bit_depth) > 8 ? 1 : 0;
 
     input_pic_buf_desc_init_data.max_width = !(scs->max_input_luma_width % 8)
         ? scs->max_input_luma_width
@@ -5402,7 +5417,7 @@ static EbErrorType validate_on_the_fly_settings(EbBufferHeaderType* input_ptr, S
             } else if (node_data->input_luma_height < 64) {
                 SVT_ERROR("Resolution change on the fly is not supported for luma height less than 64\n");
                 return EB_ErrorBadParameter;
-            } else if (scs->static_config.encoder_bit_depth == EB_TEN_BIT) {
+            } else if (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) == EB_TEN_BIT) {
                 SVT_ERROR("Resolution change on the fly is not supported for 10-bit encoding\n");
                 return EB_ErrorBadParameter;
             } else {
@@ -5616,7 +5631,7 @@ EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType* svt_enc_component, 
     // check whether the n_filled_len has enough samples to be processed
     EbPictureBufferDesc*      input_pic      = (EbPictureBufferDesc*)lib_y8b_hdr->p_buffer;
     EbSvtAv1EncConfiguration* config         = &scs->static_config;
-    bool                      is_16bit_input = config->encoder_bit_depth > EB_EIGHT_BIT;
+    bool                      is_16bit_input = SVT_EFFECTIVE_BIT_DEPTH(config->encoder_bit_depth) > EB_EIGHT_BIT;
 
     const uint8_t subsampling_x = (config->encoder_color_format == EB_YUV444 ? 0 : 1);
     const uint8_t subsampling_y =
@@ -5864,7 +5879,7 @@ static EbErrorType allocate_frame_buffer(SequenceControlSet* scs, EbBufferHeader
     EbErrorType                 return_error = EB_ErrorNone;
     EbPictureBufferDescInitData input_pic_buf_desc_init_data;
     EbSvtAv1EncConfiguration*   config   = &scs->static_config;
-    uint8_t                     is_16bit = config->encoder_bit_depth > 8 ? 1 : 0;
+    uint8_t                     is_16bit = SVT_EFFECTIVE_BIT_DEPTH(config->encoder_bit_depth) > 8 ? 1 : 0;
 
     input_pic_buf_desc_init_data.max_width = !(scs->max_input_luma_width % 8)
         ? scs->max_input_luma_width
@@ -6074,7 +6089,7 @@ EbErrorType svt_output_recon_buffer_header_creator(EbPtr* object_dbl_ptr, EbPtr 
     const uint32_t chroma_size = (((scs->seq_header.max_frame_width + ss_x) >> ss_x) *
                                   ((scs->seq_header.max_frame_height + ss_y) >> ss_y)) *
         2 /*u + v*/;
-    const uint32_t ten_bit    = (scs->static_config.encoder_bit_depth > 8);
+    const uint32_t ten_bit    = (SVT_EFFECTIVE_BIT_DEPTH(scs->static_config.encoder_bit_depth) > 8);
     const uint32_t frame_size = (luma_size + chroma_size) << ten_bit;
 
     *object_dbl_ptr = NULL;
