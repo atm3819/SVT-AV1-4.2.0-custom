@@ -90,3 +90,30 @@ void svt_compute_interm_var_four8x8_neon(uint8_t* input_samples, uint16_t input_
     vst1q_u64(mean_of_squared8x8_blocks + 0, mean_sq_acc_low);
     vst1q_u64(mean_of_squared8x8_blocks + 2, mean_sq_acc_high);
 }
+
+// 8x8 only: (sum << (VARIANCE_PRECISION >> 1)) / (8 * 8) == sum << 2
+uint64_t svt_compute_mean8x8_neon(uint8_t* input_samples, uint32_t input_stride, uint32_t input_area_width,
+                                  uint32_t input_area_height) {
+    uint16x8_t acc = vdupq_n_u16(0);
+    for (int i = 0; i < 8; i++) {
+        acc = vaddw_u8(acc, vld1_u8(input_samples + i * input_stride));
+    }
+
+    (void)input_area_width;
+    (void)input_area_height;
+    return (uint64_t)vaddlvq_u16(acc) << 2;
+}
+
+// 8x8 only: (sum_of_squares << VARIANCE_PRECISION) / (8 * 8) == sum_of_squares << 10
+uint64_t svt_compute_mean_of_squared_values8x8_neon(uint8_t* input_samples, uint32_t input_stride,
+                                                    uint32_t input_area_width, uint32_t input_area_height) {
+    uint32x4_t acc = vdupq_n_u32(0);
+    for (int i = 0; i < 8; i++) {
+        const uint8x8_t s = vld1_u8(input_samples + i * input_stride);
+        acc               = vpadalq_u16(acc, vmull_u8(s, s));
+    }
+
+    (void)input_area_width;
+    (void)input_area_height;
+    return (uint64_t)vaddvq_u32(acc) << 10;
+}
