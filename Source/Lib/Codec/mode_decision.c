@@ -106,17 +106,25 @@ int svt_is_interintra_allowed(uint8_t enable_inter_intra, BlockSize bsize, Predi
 }
 
 int svt_aom_filter_intra_allowed_bsize(BlockSize bs) {
+    if (!CONFIG_ENABLE_FILTER_INTRA) {
+        return 0; // filter_intra off -> const-folds, cascades DCE
+    }
     return block_size_wide[bs] <= 32 && block_size_high[bs] <= 32;
 }
 
 int svt_aom_filter_intra_allowed(uint8_t enable_filter_intra, BlockSize bsize, uint8_t palette_size, uint32_t mode) {
+    if (!CONFIG_ENABLE_FILTER_INTRA) {
+        return 0; // filter_intra off
+    }
     return enable_filter_intra && mode == DC_PRED && palette_size == 0 && svt_aom_filter_intra_allowed_bsize(bsize);
 }
 
+#if CONFIG_ENABLE_INTER_COMPOUND
 // returns the max inter-inter compound type based on settings and block size
 static MD_COMP_TYPE get_tot_comp_types_bsize(MD_COMP_TYPE tot_comp_types, BlockSize bsize) {
     return (svt_aom_get_wedge_params_bits(bsize) == 0) ? MIN(tot_comp_types, MD_COMP_WEDGE) : tot_comp_types;
 }
+#endif
 
 /*
 Get the ME offset for a given block (the offset used to locate the PA MVs from the parent PCS).
@@ -221,6 +229,9 @@ MotionMode svt_aom_obmc_motion_mode_allowed(
     const PictureControlSet* pcs, ModeDecisionContext* ctx, const BlockSize bsize,
     uint8_t          situation, // 0: candidate(s) preparation, 1: data preparation, 2: simple translation face-off
     MvReferenceFrame rf0, MvReferenceFrame rf1, PredictionMode mode) {
+    if (!CONFIG_ENABLE_OBMC && !CONFIG_ENABLE_WARP) {
+        return SIMPLE_TRANSLATION; // OBMC/warp off -> const-folds, cascades DCE
+    }
     if (ctx->obmc_ctrls.trans_face_off && !situation) {
         return SIMPLE_TRANSLATION;
     }
@@ -992,6 +1003,7 @@ static void inj_non_simple_modes(PictureControlSet* pcs, ModeDecisionContext* ct
     *total_cand_count = cand_count;
 }
 
+#if CONFIG_ENABLE_INTER_COMPOUND
 // Determines if inter MVP compound modes should be skipped based on info from neighbouring blocks/ref frame types.
 static bool skip_compound_on_ref_types(ModeDecisionContext* ctx, MvReferenceFrame rf[2]) {
     if (!ctx->inter_comp_ctrls.skip_on_ref_info) {
@@ -1034,6 +1046,7 @@ static bool skip_compound_on_ref_types(ModeDecisionContext* ctx, MvReferenceFram
 
     return skip_comp;
 }
+#endif
 
 // Inject inter-inter compound types (DIST, DIFF, WEDGE) for a bipred AVG candidate
 //
@@ -1041,6 +1054,13 @@ static bool skip_compound_on_ref_types(ModeDecisionContext* ctx, MvReferenceFram
 // same as the number of candidates injected so far).  It is assumed the AVG candidate to base
 // the other candidtes on is the previously injected candidate (at index total_cand_count - 1).
 static void inj_comp_modes(PictureControlSet* pcs, ModeDecisionContext* ctx, uint32_t* total_cand_count) {
+#if !CONFIG_ENABLE_INTER_COMPOUND
+    // Inter compound disabled (RTC / MINIMAL): nothing to inject here. Compiling the body out lets LTO
+    // cascade-DCE svt_aom_calc_pred_masked_compound + the wedge/diff mask builders.
+    (void)pcs;
+    (void)ctx;
+    (void)total_cand_count;
+#else
     // index of MD_COMP_AVG candidate (to be used to copy cand info for other modes)
     // assumes the avg cand is the previously injected candidate
     const uint32_t         avg_cand_idx = *total_cand_count - 1;
@@ -1095,6 +1115,7 @@ static void inj_comp_modes(PictureControlSet* pcs, ModeDecisionContext* ctx, uin
         INC_MD_CAND_CNT(cand_count, pcs->ppcs->max_can_count);
     }
     *total_cand_count = cand_count;
+#endif // !CONFIG_ENABLE_INTER_COMPOUND
 }
 
 static void unipred_3x3_candidates_injection(PictureControlSet* pcs, ModeDecisionContext* ctx,
@@ -2841,10 +2862,9 @@ static void inject_inter_candidates_pd0(PictureControlSet* pcs, ModeDecisionCont
     FrameHeader* frm_hdr = &pcs->ppcs->frm_hdr;
     // Bipred prediction is only allowed when both dimensions are > 4 and the frame-header reference mode allows it.
     // See AV1 spec 5.11.25
-    const bool allow_bipred = (frm_hdr->reference_mode == SINGLE_REFERENCE || ctx->blk_geom->bwidth == 4 ||
-                               ctx->blk_geom->bheight == 4)
-        ? false
-        : true;
+    // RTC low-delay is single-reference (no compound / 2nd ref): CONFIG_ENABLE_INTER_COMPOUND folds this to false.
+    const bool allow_bipred = CONFIG_ENABLE_INTER_COMPOUND && frm_hdr->reference_mode != SINGLE_REFERENCE &&
+        ctx->blk_geom->bwidth != 4 && ctx->blk_geom->bheight != 4;
 
     inject_new_candidates_pd0(pcs, ctx, candidate_total_cnt, allow_bipred);
 }
@@ -2854,10 +2874,9 @@ static void inject_inter_candidates_light_pd1(PictureControlSet* pcs, ModeDecisi
     FrameHeader* frm_hdr = &pcs->ppcs->frm_hdr;
     // Bipred prediction is only allowed when both dimensions are > 4 and the frame-header reference mode allows it.
     // See AV1 spec 5.11.25
-    const bool allow_bipred = (frm_hdr->reference_mode == SINGLE_REFERENCE || ctx->blk_geom->bwidth == 4 ||
-                               ctx->blk_geom->bheight == 4)
-        ? false
-        : true;
+    // RTC low-delay is single-reference (no compound / 2nd ref): CONFIG_ENABLE_INTER_COMPOUND folds this to false.
+    const bool allow_bipred = CONFIG_ENABLE_INTER_COMPOUND && frm_hdr->reference_mode != SINGLE_REFERENCE &&
+        ctx->blk_geom->bwidth != 4 && ctx->blk_geom->bheight != 4;
     // Needed in case WM/OBMC is on at the frame level (even though not used in light-PD1 path)
     if (frm_hdr->is_motion_mode_switchable) {
         const uint16_t mi_row = ctx->blk_org_y >> MI_SIZE_LOG2;
@@ -2885,10 +2904,9 @@ static void svt_aom_inject_inter_candidates(PictureControlSet* pcs, ModeDecision
     FrameHeader* frm_hdr = &pcs->ppcs->frm_hdr;
     // Bipred prediction is only allowed when both dimensions are > 4 and the frame-header reference mode allows it.
     // See AV1 spec 5.11.25
-    const bool allow_bipred = (frm_hdr->reference_mode == SINGLE_REFERENCE || ctx->blk_geom->bwidth == 4 ||
-                               ctx->blk_geom->bheight == 4)
-        ? false
-        : true;
+    // RTC low-delay is single-reference (no compound / 2nd ref): CONFIG_ENABLE_INTER_COMPOUND folds this to false.
+    const bool allow_bipred = CONFIG_ENABLE_INTER_COMPOUND && frm_hdr->reference_mode != SINGLE_REFERENCE &&
+        ctx->blk_geom->bwidth != 4 && ctx->blk_geom->bheight != 4;
 
     const uint32_t mi_row = ctx->blk_org_y >> MI_SIZE_LOG2;
     const uint32_t mi_col = ctx->blk_org_x >> MI_SIZE_LOG2;
