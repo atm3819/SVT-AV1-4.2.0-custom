@@ -376,6 +376,11 @@ static void release_frames(EncodeContext* enc_ctx, int frames) {
         // Reset the Reorder Queue Entry
         queue_entry_ptr->picture_number += enc_ctx->packetization_reorder_queue_size;
         queue_entry_ptr->output_stream_wrapper_ptr = (EbObjectWrapper*)NULL;
+        // return the ppcs now the slot is free, instead of when rate control consumed the feedback
+        if (queue_entry_ptr->ppcs_wrapper) {
+            svt_release_object(queue_entry_ptr->ppcs_wrapper);
+            queue_entry_ptr->ppcs_wrapper = NULL;
+        }
     }
     enc_ctx->packetization_reorder_queue_head_index = get_reorder_queue_pos(enc_ctx, frames);
 }
@@ -667,9 +672,22 @@ EbErrorType svt_aom_packetization_kernel_iter(void* context) {
     // get a new entry spot
     int32_t                    queue_entry_index = pcs->ppcs->decode_order % enc_ctx->packetization_reorder_queue_size;
     PacketizationReorderEntry* queue_entry_ptr   = enc_ctx->packetization_reorder_queue[queue_entry_index];
-    queue_entry_ptr->start_time_seconds          = pcs->ppcs->start_time_seconds;
-    queue_entry_ptr->start_time_u_seconds        = pcs->ppcs->start_time_u_seconds;
-    queue_entry_ptr->is_alt_ref                  = pcs->ppcs->is_alt_ref;
+    // Slot i always holds decode order i modulo the queue size, so a mismatch means the entry
+    // is still live and is about to be overwritten, losing a whole queue's worth of TUs and
+    // leaving EOS unreachable. Report it loudly.
+    svt_aom_assert_err(queue_entry_ptr->picture_number == pcs->ppcs->decode_order,
+                       "packetization reorder queue overrun");
+    // assert_err only logs under NDEBUG, so drop the stale ppcs rather than leaking it
+    if (queue_entry_ptr->ppcs_wrapper) {
+        svt_release_object(queue_entry_ptr->ppcs_wrapper);
+    }
+    // hold the ppcs until the slot drains, so an undrained entry always accounts for one ppcs.
+    // also keeps it alive past the rate control post below, which may drop rc's own reference
+    svt_object_inc_live_count(pcs->ppcs_wrapper, 1);
+    queue_entry_ptr->ppcs_wrapper         = pcs->ppcs_wrapper;
+    queue_entry_ptr->start_time_seconds   = pcs->ppcs->start_time_seconds;
+    queue_entry_ptr->start_time_u_seconds = pcs->ppcs->start_time_u_seconds;
+    queue_entry_ptr->is_alt_ref           = pcs->ppcs->is_alt_ref;
     svt_get_empty_object(scs->enc_ctx->stream_output_fifo_ptr, &pcs->ppcs->output_stream_wrapper_ptr);
     EbObjectWrapper*    output_stream_wrapper_ptr = pcs->ppcs->output_stream_wrapper_ptr;
     EbBufferHeaderType* output_stream_ptr         = (EbBufferHeaderType*)output_stream_wrapper_ptr->object_ptr;
