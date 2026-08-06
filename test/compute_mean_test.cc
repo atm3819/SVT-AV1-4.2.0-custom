@@ -19,6 +19,8 @@
  * - compute_sub_mean8x8_sse2_intrin
  * - compute_mean8x8_avx2_intrin
  * - svt_compute_interm_var_four8x8_avx2_intrin
+ * - svt_compute_mean8x8_neon
+ * - svt_compute_mean_of_squared_values8x8_neon
  *
  * @author Cidana-Edmond,Cidana-Ivy
  *
@@ -136,6 +138,15 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(AVX2, ComputeMeanValueTest,
                          ::testing::Values(svt_compute_mean8x8_avx2_intrin));
 #endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(NEON, ComputeMeanValueTest,
+                         ::testing::Values(svt_compute_mean8x8_neon));
+
+INSTANTIATE_TEST_SUITE_P(
+    NEON, ComputeMeanSquaredValueTest,
+    ::testing::Values(svt_compute_mean_of_squared_values8x8_neon));
+#endif  // ARCH_AARCH64
 
 typedef uint64_t (*compute_mean8x8)(uint8_t* input_samples,
                                     uint16_t input_stride);
