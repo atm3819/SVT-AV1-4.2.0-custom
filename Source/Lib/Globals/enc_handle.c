@@ -549,7 +549,9 @@ static EbErrorType load_default_buffer_configuration_settings(SequenceControlSet
         max_fifo, scs->picture_control_set_pool_init_count); // outputs one pic @ a time to pic analysis (no segments)
     scs->picture_analysis_fifo_init_count = MIN(
         max_fifo, scs->picture_control_set_pool_init_count); // output from pic analysis to PD process (single threaded)
-    scs->enc_ctx->picture_decision_reorder_queue_size = scs->picture_control_set_pool_init_count;
+    // +1 b/c release_prev_picture_from_reorder_queue keeps the entry behind the head for the scd
+    // histogram until the next pass, so the window is one wider than the ppcs pool
+    scs->enc_ctx->picture_decision_reorder_queue_size = scs->picture_control_set_pool_init_count + 1;
     scs->picture_decision_fifo_init_count             = MIN(
         max_fifo, scs->picture_control_set_pool_init_count * MAX(tot_me_segs, tot_tf_segs));
     scs->motion_estimation_fifo_init_count = MIN(
