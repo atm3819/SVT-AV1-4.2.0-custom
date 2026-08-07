@@ -590,8 +590,14 @@ static EbErrorType load_default_buffer_configuration_settings(SequenceControlSet
         max_fifo, scs->picture_control_set_pool_init_count_child); // EC outputs to packetization (single threaded)
     scs->enc_ctx->packetization_reorder_queue_size = scs->picture_control_set_pool_init_count;
     // bistream buffer will be allocated at run time. app will free the buffer once written to file.
-    scs->output_stream_buffer_fifo_init_count = scs->picture_control_set_pool_init_count +
-        2; // +2 b/c used to signal EOS @ resource coord and packetization
+    //
+    // release_frames frees the reorder slot and its ppcs, but not the output buffer, which only the
+    // app frees. Holder: 1 per undrained reorder
+    // slot (<= ppcs pool), 1 per frame parked in the undisplayed queue
+    // (<= UNDISP_QUEUE_SIZE), +2 to signal EOS @ resource coord
+    // Upperbound matters. Packetization can block in svt_get_empty_object without a slot.
+    scs->output_stream_buffer_fifo_init_count = scs->picture_control_set_pool_init_count + UNDISP_QUEUE_SIZE + 2;
+
     //#====================== Processes number ======================
     scs->total_process_init_count = 0;
 
