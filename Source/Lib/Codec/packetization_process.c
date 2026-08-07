@@ -125,6 +125,10 @@ static int pts_descend(const void* pa, const void* pb) {
 static void push_undisplayed_frame(EncodeContext* enc_ctx, EbObjectWrapper* wrapper) {
     if (enc_ctx->picture_decision_undisplayed_queue_count >= UNDISP_QUEUE_SIZE) {
         SVT_ERROR("bug, too many frames in undisplayed queue");
+        // drop it as the alt ref path does, rather than leak the buffer. leaking drains the output
+        // pool and stalls packetization for good, which hides the bug being reported here
+        EB_FREE(((EbBufferHeaderType*)wrapper->object_ptr)->p_buffer);
+        svt_release_object(wrapper);
         return;
     }
     uint32_t count                                       = enc_ctx->picture_decision_undisplayed_queue_count;
