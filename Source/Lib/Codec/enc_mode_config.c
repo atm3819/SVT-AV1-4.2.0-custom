@@ -2251,6 +2251,22 @@ void svt_aom_sig_deriv_multi_processes_rtc(SequenceControlSet* scs, PictureParen
 
     // Set palette level
     if (sc_class5) {
+#if FTR_RTC_INTER_PALETTE
+        // Palette also on intra blocks inside inter frames at M7-M8, where the static text/UI of a
+        // screen-share stream lives. The level must be set here, pre-ME, so allow_screen_content_tools
+        // below accounts for it; the frame-idle gate needs this frame's norm_me_dist, which only
+        // exists post-ME, so it runs in svt_aom_sig_deriv_mode_decision_config_rtc. Active inter
+        // frames therefore carry allow_screen_content_tools=1 even where most blocks decline
+        // palette: the cost is one header bit plus the per-block palette_y_mode flag on
+        // palette-eligible intra blocks.
+        if (enc_mode <= ENC_M7) {
+            pcs->palette_level = is_islice ? 5 : 7;
+        } else if (enc_mode <= ENC_M8) {
+            pcs->palette_level = 7;
+        } else {
+            pcs->palette_level = 0;
+        }
+#else
         if (enc_mode <= ENC_M7) {
             pcs->palette_level = is_islice ? 5 : 0;
         } else if (enc_mode <= ENC_M8) {
@@ -2258,6 +2274,7 @@ void svt_aom_sig_deriv_multi_processes_rtc(SequenceControlSet* scs, PictureParen
         } else {
             pcs->palette_level = 0;
         }
+#endif
     } else {
         pcs->palette_level = 0;
     }
@@ -9569,6 +9586,19 @@ void svt_aom_sig_deriv_mode_decision_config_rtc(SequenceControlSet* scs, Picture
     const bool               transition_present = (ppcs->transition_present == 1);
     const uint32_t           sq_qp              = scs->static_config.qp;
     const bool               use_flat_ipp       = ppcs->hierarchical_levels == 0; // rtc path, so rtc is true
+#if FTR_RTC_INTER_PALETTE
+    // Frame-idle gate for inter-frame palette. norm_me_dist is written post-ME (initial RC), so this
+    // decision cannot be made where palette_level is first set (picture decision, pre-ME). Zero
+    // average ME distortion means a frozen screen: drop palette and re-derive the header flag so an
+    // idle inter frame signals exactly as baseline. Exact zero, not a small threshold: an idle
+    // screen capture repeats pixel-exactly, while a threshold could misclassify frames whose
+    // activity is small or localized (diluted in the frame-wide average) and lose palette there.
+    if (!is_islice && ppcs->palette_level && ppcs->norm_me_dist == 0) {
+        ppcs->palette_level = 0;
+        set_palette_level(ppcs, 0);
+        ppcs->frm_hdr.allow_screen_content_tools = ppcs->frm_hdr.allow_intrabc ? 1 : 0;
+    }
+#endif
     //MFMV
     uint8_t mfmv_level = 0;
     if (is_islice || scs->mfmv_enabled == 0 || pcs->ppcs->frm_hdr.error_resilient_mode) {
