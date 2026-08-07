@@ -615,7 +615,7 @@ EbErrorType svt_aom_picture_manager_kernel_iter(void* context) {
             // Give the new Reference a nominal live_count of 1
             svt_object_inc_live_count(entry_ppcs->ref_pic_wrapper, 1);
 #if SRM_REPORT
-            pcs->ref_pic_wrapper->pic_number = pcs->picture_number;
+            entry_ppcs->ref_pic_wrapper->pic_number = entry_ppcs->picture_number;
 #endif
         } else {
             entry_ppcs->ref_pic_wrapper = NULL;
