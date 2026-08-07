@@ -549,7 +549,9 @@ static EbErrorType load_default_buffer_configuration_settings(SequenceControlSet
         max_fifo, scs->picture_control_set_pool_init_count); // outputs one pic @ a time to pic analysis (no segments)
     scs->picture_analysis_fifo_init_count = MIN(
         max_fifo, scs->picture_control_set_pool_init_count); // output from pic analysis to PD process (single threaded)
-    scs->enc_ctx->picture_decision_reorder_queue_size = scs->picture_control_set_pool_init_count;
+    // +1 b/c release_prev_picture_from_reorder_queue keeps the entry behind the head for the scd
+    // histogram until the next pass, so the window is one wider than the ppcs pool
+    scs->enc_ctx->picture_decision_reorder_queue_size = scs->picture_control_set_pool_init_count + 1;
     scs->picture_decision_fifo_init_count             = MIN(
         max_fifo, scs->picture_control_set_pool_init_count * MAX(tot_me_segs, tot_tf_segs));
     scs->motion_estimation_fifo_init_count = MIN(
@@ -588,8 +590,14 @@ static EbErrorType load_default_buffer_configuration_settings(SequenceControlSet
         max_fifo, scs->picture_control_set_pool_init_count_child); // EC outputs to packetization (single threaded)
     scs->enc_ctx->packetization_reorder_queue_size = scs->picture_control_set_pool_init_count;
     // bistream buffer will be allocated at run time. app will free the buffer once written to file.
-    scs->output_stream_buffer_fifo_init_count = scs->picture_control_set_pool_init_count +
-        2; // +2 b/c used to signal EOS @ resource coord and packetization
+    //
+    // release_frames frees the reorder slot and its ppcs, but not the output buffer, which only the
+    // app frees. Holder: 1 per undrained reorder
+    // slot (<= ppcs pool), 1 per frame parked in the undisplayed queue
+    // (<= UNDISP_QUEUE_SIZE), +2 to signal EOS @ resource coord
+    // Upperbound matters. Packetization can block in svt_get_empty_object without a slot.
+    scs->output_stream_buffer_fifo_init_count = scs->picture_control_set_pool_init_count + UNDISP_QUEUE_SIZE + 2;
+
     //#====================== Processes number ======================
     scs->total_process_init_count = 0;
 

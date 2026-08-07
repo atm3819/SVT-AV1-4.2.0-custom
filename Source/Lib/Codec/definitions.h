@@ -1439,7 +1439,9 @@ typedef enum ATTRIBUTE_PACKED {
 // onyxc_int.h
 #define CDEF_MAX_STRENGTHS 16
 
-#define UNDISP_QUEUE_SIZE (REF_FRAMES * 10)
+// A parked frame is redeemed by a show_existing_frame naming a dpb index, and the queue is filled
+// in decode order, so no more than REF_FRAMES can be outstanding
+#define UNDISP_QUEUE_SIZE REF_FRAMES
 
 /* Constant values while waiting for the sequence header */
 #define FRAME_ID_LENGTH 15
