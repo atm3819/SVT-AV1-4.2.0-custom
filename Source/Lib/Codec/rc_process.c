@@ -10,6 +10,7 @@
 * PATENTS file, you can obtain it at https://www.aomedia.org/license/patent-license.
 */
 #include <stdlib.h>
+#include <math.h>
 
 #include "definitions.h"
 #include "enc_handle.h"
@@ -50,6 +51,98 @@ static uint8_t NOINLINE clamp_qp(SequenceControlSet* scs, int qp) {
     int qmin = scs->static_config.min_qp_allowed;
     int qmax = scs->static_config.max_qp_allowed;
     return (uint8_t)CLIP3(qmin, qmax, qp);
+}
+
+/* ITU-T H.Sup15 (01/2017) section 8.3.2: chroma QP offset mapping for HDR/WCG
+ * Y'CbCr 4:2:0 video with PQ transfer characteristics. The recommendation
+ * defines the offset in the (codec) QP domain as
+ *     dQPc = clip(round(1.04 * (-0.46 * QP + 9.26)), -12, 0)
+ * which these constants encode.
+ *
+ * QP <-> qindex: SVT-AV1 and libaom share the SAME mapping, qindex = 4 * QP
+ * (quantizer_to_qindex[] in md_process.c -- exact for QP 0..60, mildly
+ * compressed for QP 61..63). There is no AV1-vs-libaom standard difference to
+ * account for here. What is incorrect is libaom's HDR chroma code itself
+ * (av1/encoder/av1_quantize.c adjust_hdr_cb_deltaq()/adjust_hdr_cr_deltaq()):
+ * it scales with qindex ~= 2 * QP rather than the true 4 * QP, i.e. it feeds
+ * the formula a QP that is 2x too large. We use the correct qindex = 4 * QP
+ * relation in both directions -- QP = base_q_idx / 4 to evaluate the offset,
+ * then * 4 to convert the QP-domain offset back into a qindex delta_q.
+ *
+ * NOTE: a spec-literal variant (full offset to AV1's -63 delta_q range, with
+ * the distinct H.Sup15 Cr factor of 1.39) was evaluated and rejected: in
+ * SVT-AV1's luma-dominated RD (no per-component chroma lambda) it spent more
+ * bits for lower chroma PSNR and SSIMULACRA2 at high QP. The c_cb = c_cr = 1.04
+ * offset is retained. With the corrected 4*QP scaling the offset is 0 until
+ * QP ~= 20 (qindex ~= 82) and reaches the -12 QP clamp (-48 qindex) only near
+ * QP 63; the high-QP end is more aggressive than a -24 qindex cap and the
+ * operating point should be re-validated by BD-rate / SSIMULACRA2 before
+ * enabling by default. */
+#define HDR_CHROMA_QP_SCALE (-0.46)
+#define HDR_CHROMA_QP_OFFSET (9.26)
+#define HDR_CHROMA_CB_QP_SCALE (1.04)
+#define HDR_CHROMA_CR_QP_SCALE (1.04)
+// SVT-AV1 / libaom shared mapping: qindex = HDR_QINDEX_PER_QP * QP.
+#define HDR_QINDEX_PER_QP (4.0)
+// H.Sup15 clamps the chroma QP offset to [-12, 0] in the QP domain.
+#define HDR_CHROMA_DQP_QP_MIN (-12.0)
+
+int8_t svt_aom_get_hdr_chroma_dqp(int32_t base_q_idx, int32_t plane) {
+    assert(plane == PLANE_U || plane == PLANE_V);
+    // QP of the AV1 base qindex via the shared qindex = 4 * QP relation.
+    const double base_qp   = base_q_idx / HDR_QINDEX_PER_QP;
+    const double chroma_qp = HDR_CHROMA_QP_SCALE * base_qp + HDR_CHROMA_QP_OFFSET;
+    const double scale     = plane == PLANE_V ? HDR_CHROMA_CR_QP_SCALE : HDR_CHROMA_CB_QP_SCALE;
+    // H.Sup15 offset, converted to the qindex domain by the same 4 * QP slope.
+    const double dqp_fp = scale * chroma_qp * HDR_QINDEX_PER_QP;
+    int32_t      dqp    = (int32_t)(dqp_fp + (dqp_fp < 0 ? -0.5 : 0.5));
+    dqp                 = AOMMIN(0, dqp);
+    // Enforce the spec [-12, 0] QP envelope expressed in the qindex domain (* 4).
+    dqp = CLIP3((int32_t)(HDR_CHROMA_DQP_QP_MIN * HDR_QINDEX_PER_QP), 0, dqp);
+    return (int8_t)dqp;
+}
+
+/* Derive the per-frame chroma delta-q values from the frame base qindex when
+ * hdr_chroma_deltaq is enabled. Must be (re-)applied whenever base_q_idx
+ * changes; it is a pure function of base_q_idx so re-application is safe. */
+void svt_aom_apply_hdr_chroma_deltaq(const SequenceControlSet* scs, PictureParentControlSet* ppcs) {
+#if HDR_CHROMA_LAMBDA_WEIGHT
+    ppcs->hdr_chroma_dist_weight_q7 = 128; // 1.0 unless the HDR delta q sets it below
+#endif
+    if (!scs->static_config.hdr_chroma_deltaq) {
+        return;
+    }
+    QuantizationParams* q_params = &ppcs->frm_hdr.quantization_params;
+    if (q_params->base_q_idx == 0) {
+        // Lossless frame: chroma delta q must not be applied (see also the
+        // coded_lossless handling in md_config_process.c)
+        q_params->delta_q_dc[PLANE_U] = q_params->delta_q_ac[PLANE_U] = 0;
+        q_params->delta_q_dc[PLANE_V] = q_params->delta_q_ac[PLANE_V] = 0;
+        return;
+    }
+    const int8_t dqp_cb = svt_aom_get_hdr_chroma_dqp(q_params->base_q_idx, PLANE_U);
+    const int8_t dqp_cr = svt_aom_get_hdr_chroma_dqp(q_params->base_q_idx, PLANE_V);
+    // encode_quantization() relies on equal U/V deltas whenever the sequence
+    // header signaled separate_uv_delta_q == 0
+    assert(scs->seq_header.color_config.separate_uv_delta_q || dqp_cb == dqp_cr);
+    q_params->delta_q_dc[PLANE_U] = q_params->delta_q_ac[PLANE_U] = dqp_cb;
+    q_params->delta_q_dc[PLANE_V] = q_params->delta_q_ac[PLANE_V] = dqp_cr;
+#if HDR_CHROMA_LAMBDA_WEIGHT
+    // Emulate a per-component chroma lambda that tracks the *applied* chroma
+    // qindex offset. SVT-AV1's lambda is proportional to dc_quant_qtx(qindex)^2
+    // (svt_aom_compute_rd_mult_based_on_qindex), so the distortion weight that
+    // makes the joint Y/U/V decision behave as if chroma used lambda_chroma is
+    //     w = (dc_quant_qtx(qy) / dc_quant_qtx(qy + delta))^2
+    // using the same table that defines lambda and the same delta applied to the
+    // chroma planes (dqp_cb is a qindex-domain delta, dqp_cb == dqp_cr here).
+    // delta <= 0 => chroma is quantized finer => w >= 1.0, so chroma distortion
+    // counts for more. No second QP<->qindex round trip.
+    const EbBitDepth bit_depth      = scs->static_config.encoder_bit_depth;
+    const double     dc_luma        = svt_aom_dc_quant_qtx(q_params->base_q_idx, 0, bit_depth);
+    const double     dc_chroma      = svt_aom_dc_quant_qtx(q_params->base_q_idx, dqp_cb, bit_depth);
+    const double     w              = (dc_luma / dc_chroma) * (dc_luma / dc_chroma);
+    ppcs->hdr_chroma_dist_weight_q7 = (int32_t)(w * 128.0 + 0.5);
+#endif
 }
 
 int svt_aom_frame_is_kf_gf_arf(PictureParentControlSet* ppcs) {
@@ -861,6 +954,10 @@ EbErrorType svt_aom_rate_control_kernel_iter(void* context) {
                 }
                 svt_av1_rc_calc_qindex_rate_control(pcs, scs);
             }
+            // Derive HDR chroma delta q from the final frame qindex; intentionally
+            // overrides the static and tune-based chroma offsets (libaom semantics).
+            // Must stay before the alt-ref -> overlay quantization_params copy below.
+            svt_aom_apply_hdr_chroma_deltaq(scs, ppcs);
             ppcs->picture_qp = clamp_qp(scs, (ppcs->frm_hdr.quantization_params.base_q_idx + 2) >> 2);
         }
 
@@ -870,6 +967,9 @@ EbErrorType svt_aom_rate_control_kernel_iter(void* context) {
             PictureParentControlSet* overlay_ppcs     = ppcs->overlay_ppcs_ptr;
             overlay_ppcs->picture_qp                  = ppcs->picture_qp;
             overlay_ppcs->frm_hdr.quantization_params = ppcs->frm_hdr.quantization_params;
+#if HDR_CHROMA_LAMBDA_WEIGHT
+            overlay_ppcs->hdr_chroma_dist_weight_q7 = ppcs->hdr_chroma_dist_weight_q7;
+#endif
         }
 
         if (!is_superres_recode_task) {

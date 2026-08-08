@@ -684,6 +684,8 @@ bool svt_av1_rc_recode_decision_rtc_cbr(PictureControlSet* pcs) {
 
     // Store new qindex for recode
     ppcs->frm_hdr.quantization_params.base_q_idx = new_q_idx;
+    // base_q_idx changed: re-derive the qindex-dependent HDR chroma delta q
+    svt_aom_apply_hdr_chroma_deltaq(ppcs->scs, ppcs);
 
     return true;
 }

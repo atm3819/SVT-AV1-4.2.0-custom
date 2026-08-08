@@ -1041,6 +1041,28 @@ typedef struct EbSvtAv1EncConfiguration {
      */
     uint8_t max_managed_refs;
 
+    /* @brief HDR chroma delta quantizer derived from ITU-T H.Sup15 section 8.3.2
+     * ("Conversion and coding practices for HDR/WCG Y'CbCr 4:2:0 video with PQ
+     * transfer characteristics").
+     *
+     * When enabled, the per-frame chroma delta-q values (delta_q_dc/ac for the
+     * U and V planes) are derived from the frame base qindex using the H.Sup15
+     * chroma QP mapping, improving chroma quality allocation for HDR content.
+     *
+     * Requirements: transfer_characteristics must be SMPTE ST 2084 (PQ, value 16)
+     * and encoder_bit_depth must be 10; the feature is disabled with a warning
+     * otherwise. It overrides the static chroma qindex offsets
+     * (chroma_{u,v}_{dc,ac}_qindex_offset, chroma_qindex_offsets) and any
+     * tune-based per-frame chroma offset logic. It is bypassed in lossless mode.
+     *
+     * 0 (default): disabled. 1: enabled.
+     *
+     * ABI note: this field was added in place of one padding byte. The
+     * library expects EbSvtAv1EncConfiguration to be zero-initialized
+     * before configuration (which svt_av1_enc_init_handle guarantees).
+     */
+    bool hdr_chroma_deltaq;
+
     // clang-format off
     /* Add 128 Byte Padding to Struct to avoid changing the size of the public configuration struct */
     uint8_t padding[128
@@ -1050,6 +1072,7 @@ typedef struct EbSvtAv1EncConfiguration {
         - sizeof(uint32_t) * 2 // max intra/inter bitrates
         - sizeof(bool) // enable_intrabc
         - sizeof(uint8_t) // max_managed_refs (ref-frame mgmt)
+        - sizeof(bool) // hdr_chroma_deltaq (ITU-T H.Sup15 HDR PQ chroma delta-q)
     ];
     // clang-format on
 } EbSvtAv1EncConfiguration;

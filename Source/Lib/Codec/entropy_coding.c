@@ -2372,15 +2372,21 @@ static void write_delta_q(AomWriteBitBuffer* wb, int32_t delta_q) {
 }
 
 static void encode_quantization(const PictureParentControlSet* const pcs, AomWriteBitBuffer* wb) {
-    const FrameHeader* frm_hdr = &pcs->frm_hdr;
+    const FrameHeader* frm_hdr             = &pcs->frm_hdr;
+    const bool         separate_uv_delta_q = pcs->scs->seq_header.color_config.separate_uv_delta_q;
     svt_aom_wb_write_literal(wb, frm_hdr->quantization_params.base_q_idx, QINDEX_BITS);
     write_delta_q(wb, frm_hdr->quantization_params.delta_q_dc[PLANE_Y]);
     int32_t diff_uv_delta = (frm_hdr->quantization_params.delta_q_dc[PLANE_U] !=
                              frm_hdr->quantization_params.delta_q_dc[PLANE_V]) ||
         (frm_hdr->quantization_params.delta_q_ac[PLANE_U] != frm_hdr->quantization_params.delta_q_ac[PLANE_V]);
 
-    if (diff_uv_delta) {
+    // AV1 spec 5.9.12: diff_uv_delta is coded if and only if the sequence header
+    // signaled separate_uv_delta_q; when it did not, U and V must share one delta
+    if (separate_uv_delta_q) {
         svt_aom_wb_write_bit(wb, diff_uv_delta);
+    } else {
+        assert(diff_uv_delta == 0);
+        diff_uv_delta = 0; // force a legal stream in release builds: V inherits U
     }
     write_delta_q(wb, frm_hdr->quantization_params.delta_q_dc[PLANE_U]);
     write_delta_q(wb, frm_hdr->quantization_params.delta_q_ac[PLANE_U]);
@@ -2392,7 +2398,7 @@ static void encode_quantization(const PictureParentControlSet* const pcs, AomWri
     if (frm_hdr->quantization_params.using_qmatrix) {
         svt_aom_wb_write_literal(wb, frm_hdr->quantization_params.qm[PLANE_Y], QM_LEVEL_BITS);
         svt_aom_wb_write_literal(wb, frm_hdr->quantization_params.qm[PLANE_U], QM_LEVEL_BITS);
-        if (!diff_uv_delta) {
+        if (!separate_uv_delta_q) {
             assert(frm_hdr->quantization_params.qm[PLANE_U] == frm_hdr->quantization_params.qm[PLANE_V]);
         } else {
             svt_aom_wb_write_literal(wb, frm_hdr->quantization_params.qm[PLANE_V], QM_LEVEL_BITS);
@@ -2744,11 +2750,7 @@ static AOM_INLINE void write_color_config(const SequenceControlSet* const scs, A
             svt_aom_wb_write_literal(wb, scs->static_config.chroma_sample_position, 2);
         }
     }
-    bool separate_uv_delta_q = (scs->static_config.chroma_u_ac_qindex_offset !=
-                                    scs->static_config.chroma_v_ac_qindex_offset ||
-                                scs->static_config.chroma_u_dc_qindex_offset !=
-                                    scs->static_config.chroma_v_dc_qindex_offset);
-    svt_aom_wb_write_bit(wb, separate_uv_delta_q);
+    svt_aom_wb_write_bit(wb, scs->seq_header.color_config.separate_uv_delta_q);
 }
 
 static void write_sequence_header(SequenceControlSet* scs, AomWriteBitBuffer* wb) {

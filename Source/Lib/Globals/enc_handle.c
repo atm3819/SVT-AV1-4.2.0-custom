@@ -4413,6 +4413,26 @@ static void copy_api_from_app(SequenceControlSet* scs, EbSvtAv1EncConfiguration*
         scs->static_config.chroma_v_dc_qindex_offset = config_struct->chroma_v_dc_qindex_offset;
         scs->static_config.chroma_v_ac_qindex_offset = config_struct->chroma_v_ac_qindex_offset;
     }
+    // HDR chroma delta-q (ITU-T H.Sup15 section 8.3.2); only valid for 10-bit PQ content
+    scs->static_config.hdr_chroma_deltaq = config_struct->hdr_chroma_deltaq;
+    if (scs->static_config.hdr_chroma_deltaq) {
+        // This branch is only reachable when the user explicitly set --hdr-chroma-deltaq 1
+        // (the field defaults to 0). Spell out the exact failing requirement(s) so the
+        // disable is an unmissable, actionable message rather than a buried generic warning.
+        const bool bad_tc      = config_struct->transfer_characteristics != EB_CICP_TC_SMPTE_2084;
+        const bool bad_depth   = config_struct->encoder_bit_depth != 10;
+        const bool is_lossless = scs->static_config.lossless;
+        if (bad_tc || bad_depth || is_lossless) {
+            SVT_WARN("hdr-chroma-deltaq 1 was requested but is being DISABLED because:%s%s%s\n",
+                     bad_tc ? " transfer-characteristics is not 16 (PQ / SMPTE ST 2084);" : "",
+                     bad_depth ? " encoder input is not 10-bit;" : "",
+                     is_lossless ? " the encode is lossless;" : "");
+            scs->static_config.hdr_chroma_deltaq = false;
+        }
+    }
+    // Decide the sequence-level separate_uv_delta_q once, after the chroma offsets are final;
+    // the frame header writer relies on this value (AV1 spec 5.9.12)
+    scs->seq_header.color_config.separate_uv_delta_q = svt_aom_get_separate_uv_delta_q(scs);
     memcpy(scs->static_config.lambda_scale_factors,
            config_struct->lambda_scale_factors,
            SVT_AV1_FRAME_UPDATE_TYPES * sizeof(int32_t));
