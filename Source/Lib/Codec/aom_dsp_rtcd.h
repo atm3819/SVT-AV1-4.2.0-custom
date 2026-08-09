@@ -2212,6 +2212,7 @@ void svt_av1_k_means_dim1_avx2(const int* data, int* centroids, uint8_t* indices
 void svt_av1_k_means_dim2_avx2(const int* data, int* centroids, uint8_t* indices, int n, int k, int max_itr);
 
 void svt_av1_calc_indices_dim1_avx2(const int* data, const int* centroids, uint8_t* indices, int n, int k);
+void svt_av1_calc_indices_dim1_sse4_1(const int* data, const int* centroids, uint8_t* indices, int n, int k);
 
 void svt_av1_calc_indices_dim2_avx2(const int* data, const int* centroids, uint8_t* indices, int n, int k);
 
