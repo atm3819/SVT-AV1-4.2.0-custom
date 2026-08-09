@@ -36,6 +36,7 @@ set(all_files
     blend_sse4.h
     cdef_block_sse4_1.c
     cdef_sse4.c
+    cfl_sse4_1.c
     compute_sad_intrin_sse4_1.c
     corner_match_sse4.c
     encodetxb_sse4.c
