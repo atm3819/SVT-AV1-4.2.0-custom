@@ -288,7 +288,9 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(HadamardFuncWithSize(&svt_aom_hadamard_4x4_sse2, 4),
                       HadamardFuncWithSize(&svt_aom_hadamard_8x8_sse2, 8),
                       HadamardFuncWithSize(&svt_aom_hadamard_16x16_avx2, 16),
-                      HadamardFuncWithSize(&svt_aom_hadamard_32x32_avx2, 32)));
+                      HadamardFuncWithSize(&svt_aom_hadamard_32x32_avx2, 32),
+                      HadamardFuncWithSize(&svt_aom_hadamard_16x16_sse4_1, 16),
+                      HadamardFuncWithSize(&svt_aom_hadamard_32x32_sse4_1, 32)));
 #endif  // ARCH_X86_64
 
 #ifdef ARCH_AARCH64
@@ -329,6 +331,9 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(AVX2, HadamardHighbdTest,
                          ::testing::Values(HadamardFuncWithSize(
                              &svt_aom_highbd_hadamard_8x8_avx2, 8)));
+INSTANTIATE_TEST_SUITE_P(SSE4_1, HadamardHighbdTest,
+                         ::testing::Values(HadamardFuncWithSize(
+                             &svt_aom_highbd_hadamard_8x8_sse4_1, 8)));
 #endif  // ARCH_X86_64
 
 #if ARCH_AARCH64
