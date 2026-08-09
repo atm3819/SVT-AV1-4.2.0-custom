@@ -12,6 +12,9 @@
 #include <string.h>
 #include <smmintrin.h>
 #include "definitions.h"
+#include "common_dsp_rtcd.h"
+#include "random.h"
+#include "utility.h"
 
 void svt_av1_calc_indices_dim1_sse4_1(const int* data, const int* centroids, uint8_t* indices, int n, int k) {
     int results[MAX_SB_SQUARE];
@@ -48,6 +51,102 @@ void svt_av1_calc_indices_dim1_sse4_1(const int* data, const int* centroids, uin
             const __m128i i8   = _mm_packs_epi16(i16, _mm_setzero_si128());
             const __m128i load = _mm_loadl_epi64((const __m128i*)(indices + i));
             _mm_storel_epi64((__m128i*)(indices + i), _mm_max_epi8(load, i8));
+        }
+    }
+}
+
+static INLINE int64_t calc_indices_dist_dim1_sse4_1(const int* data, const int* centroids, uint8_t* indices, unsigned n,
+                                                    int k) {
+    int results[MAX_SB_SQUARE];
+    memset(indices, 0, n * sizeof(uint8_t));
+
+    __m128i c0 = _mm_set1_epi32(centroids[0]);
+    for (unsigned i = 0; i < n; i += 4) {
+        __m128i sub = _mm_sub_epi32(_mm_loadu_si128((const __m128i*)(data + i)), c0);
+        _mm_storeu_si128((__m128i*)(results + i), _mm_mullo_epi32(sub, sub));
+    }
+
+    for (int c = 1; c < k; c++) {
+        const __m128i cent  = _mm_set1_epi32(centroids[c]);
+        const __m128i idx_v = _mm_set1_epi32(c);
+        for (unsigned i = 0; i < n; i += 8) {
+            const __m128i d1   = _mm_loadu_si128((const __m128i*)(data + i));
+            const __m128i d2   = _mm_loadu_si128((const __m128i*)(data + i + 4));
+            const __m128i s1   = _mm_sub_epi32(d1, cent);
+            const __m128i s2   = _mm_sub_epi32(d2, cent);
+            const __m128i dst1 = _mm_mullo_epi32(s1, s1);
+            const __m128i dst2 = _mm_mullo_epi32(s2, s2);
+
+            const __m128i prev1 = _mm_loadu_si128((const __m128i*)(results + i));
+            const __m128i prev2 = _mm_loadu_si128((const __m128i*)(results + i + 4));
+            const __m128i cmp1  = _mm_cmpgt_epi32(prev1, dst1);
+            const __m128i cmp2  = _mm_cmpgt_epi32(prev2, dst2);
+
+            _mm_storeu_si128((__m128i*)(results + i), _mm_blendv_epi8(prev1, dst1, cmp1));
+            _mm_storeu_si128((__m128i*)(results + i + 4), _mm_blendv_epi8(prev2, dst2, cmp2));
+
+            const __m128i iv1  = _mm_and_si128(idx_v, cmp1);
+            const __m128i iv2  = _mm_and_si128(idx_v, cmp2);
+            const __m128i i16  = _mm_packus_epi32(iv1, iv2);
+            const __m128i i8   = _mm_packs_epi16(i16, _mm_setzero_si128());
+            const __m128i load = _mm_loadl_epi64((const __m128i*)(indices + i));
+            _mm_storel_epi64((__m128i*)(indices + i), _mm_max_epi8(load, i8));
+        }
+    }
+
+    __m128i sum64 = _mm_setzero_si128();
+    for (unsigned i = 0; i < n; i += 4) {
+        const __m128i prev = _mm_loadu_si128((const __m128i*)(results + i));
+        sum64              = _mm_add_epi64(sum64, _mm_unpacklo_epi32(prev, _mm_setzero_si128()));
+        sum64              = _mm_add_epi64(sum64, _mm_unpackhi_epi32(prev, _mm_setzero_si128()));
+    }
+    return _mm_extract_epi64(sum64, 0) + _mm_extract_epi64(sum64, 1);
+}
+
+static INLINE void calc_centroids_1_sse4_1(const int* data, int* centroids, const uint8_t* indices, int n, int k) {
+    int          count[PALETTE_MAX_SIZE] = {0};
+    unsigned int rand_state              = (unsigned int)data[0];
+    assert(n <= 32768);
+    memset(centroids, 0, sizeof(centroids[0]) * k);
+
+    for (int i = 0; i < n; ++i) {
+        const int index = indices[i];
+        assert(index < k);
+        ++count[index];
+        centroids[index] += data[i];
+    }
+
+    for (int i = 0; i < k; ++i) {
+        if (count[i] == 0) {
+            centroids[i] = *(data + (lcg_rand16(&rand_state) % n));
+        } else {
+            centroids[i] = DIVIDE_AND_ROUND(centroids[i], count[i]);
+        }
+    }
+}
+
+void svt_av1_k_means_dim1_sse4_1(const int* data, int* centroids, uint8_t* indices, int n, int k, int max_itr) {
+    int     pre_centroids[2 * PALETTE_MAX_SIZE];
+    uint8_t pre_indices[MAX_SB_SQUARE];
+    assert((n & 15) == 0);
+
+    int64_t this_dist = calc_indices_dist_dim1_sse4_1(data, centroids, indices, n, k);
+
+    for (int i = 0; i < max_itr; ++i) {
+        const int64_t pre_dist = this_dist;
+        svt_memcpy_intrin_sse(pre_centroids, centroids, sizeof(pre_centroids[0]) * k);
+        svt_memcpy_intrin_sse(pre_indices, indices, sizeof(pre_indices[0]) * n);
+
+        calc_centroids_1_sse4_1(data, centroids, indices, n, k);
+        this_dist = calc_indices_dist_dim1_sse4_1(data, centroids, indices, n, k);
+
+        if (this_dist > pre_dist) {
+            svt_memcpy_intrin_sse(centroids, pre_centroids, sizeof(pre_centroids[0]) * k);
+            svt_memcpy_intrin_sse(indices, pre_indices, sizeof(pre_indices[0]) * n);
+            break;
+        }
+        if (!memcmp(centroids, pre_centroids, sizeof(pre_centroids[0]) * k)) {
+            break;
         }
     }
 }
