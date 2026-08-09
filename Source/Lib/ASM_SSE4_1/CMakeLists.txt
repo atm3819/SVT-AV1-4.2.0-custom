@@ -36,6 +36,7 @@ set(all_files
     blend_sse4.h
     cdef_block_sse4_1.c
     cdef_sse4.c
+    cfl_sse4_1.c
     compute_sad_intrin_sse4_1.c
     palette_sse4_1.c
     transforms_sse4_1.c
