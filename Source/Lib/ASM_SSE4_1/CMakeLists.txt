@@ -44,6 +44,7 @@ set(all_files
     corner_match_sse4.c
     encodetxb_sse4.c
     filterintra_sse4.c
+    hadamard_sse4_1.c
     hash_sse4_2.c
     dc_v_predictor_sse4_1.c
     dr_prediction_sse4_1.c
