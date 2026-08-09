@@ -34,6 +34,9 @@
 extern "C" {
 #endif // __cplusplus
 
+#define RTC_INTRABC                 1 // Enable a light, screen-content-gated IntraBC on RTC I-slices (intra-frame-only per AV1 spec)
+#define RTC_INTRABC_PRED_FIRST      1 // Clean-room predictor-first DV early-exit + local search window for the RTC IntraBC level
+
 //FOR DEBUGGING - Do not remove
 
 
