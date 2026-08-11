@@ -92,51 +92,35 @@ static inline void variance_8xh_neon(const uint8_t* src, int src_stride, const u
 
 static inline void variance_16xh_neon(const uint8_t* src, int src_stride, const uint8_t* ref, int ref_stride, int h,
                                       uint32_t* sse, int* sum) {
-    int16x8_t  sum_s16[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
-    uint32x4_t sse_u32[2] = {vdupq_n_u32(0), vdupq_n_u32(0)};
+    int16x8_t sum_s16[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+    int32x4_t sse_s32[2] = {vdupq_n_s32(0), vdupq_n_s32(0)};
 
     // Number of rows we can process before 'sum_s16' accumulators overflow:
     // 32767 / 255 ~= 128, so 128 16-wide rows.
     assert(h <= 128);
-    assert((h & 1) == 0);
 
     int i = h;
-#if DISABLE_LOOP_UNROLL
-#pragma clang loop unroll(disable)
-#endif
     do {
-        uint8x16_t s0 = vld1q_u8(src);
-        uint8x16_t r0 = vld1q_u8(ref);
-        uint8x16_t s1 = vld1q_u8(src + src_stride);
-        uint8x16_t r1 = vld1q_u8(ref + ref_stride);
+        uint8x16_t s = vld1q_u8(src);
+        uint8x16_t r = vld1q_u8(ref);
 
-        int16x8_t diff0_l = vreinterpretq_s16_u16(vsubl_u8(vget_low_u8(s0), vget_low_u8(r0)));
-        int16x8_t diff0_h = vreinterpretq_s16_u16(vsubl_u8(vget_high_u8(s0), vget_high_u8(r0)));
-        int16x8_t diff1_l = vreinterpretq_s16_u16(vsubl_u8(vget_low_u8(s1), vget_low_u8(r1)));
-        int16x8_t diff1_h = vreinterpretq_s16_u16(vsubl_u8(vget_high_u8(s1), vget_high_u8(r1)));
+        int16x8_t diff_l = vreinterpretq_s16_u16(vsubl_u8(vget_low_u8(s), vget_low_u8(r)));
+        int16x8_t diff_h = vreinterpretq_s16_u16(vsubl_u8(vget_high_u8(s), vget_high_u8(r)));
 
-        sum_s16[0] = vaddq_s16(sum_s16[0], diff0_l);
-        sum_s16[1] = vaddq_s16(sum_s16[1], diff0_h);
-        sum_s16[0] = vaddq_s16(sum_s16[0], diff1_l);
-        sum_s16[1] = vaddq_s16(sum_s16[1], diff1_h);
+        sum_s16[0] = vaddq_s16(sum_s16[0], diff_l);
+        sum_s16[1] = vaddq_s16(sum_s16[1], diff_h);
 
-        uint16x8_t sq0_l = vreinterpretq_u16_s16(vmulq_s16(diff0_l, diff0_l));
-        uint16x8_t sq0_h = vreinterpretq_u16_s16(vmulq_s16(diff0_h, diff0_h));
-        uint16x8_t sq1_l = vreinterpretq_u16_s16(vmulq_s16(diff1_l, diff1_l));
-        uint16x8_t sq1_h = vreinterpretq_u16_s16(vmulq_s16(diff1_h, diff1_h));
+        sse_s32[0] = vmlal_s16(sse_s32[0], vget_low_s16(diff_l), vget_low_s16(diff_l));
+        sse_s32[1] = vmlal_s16(sse_s32[1], vget_high_s16(diff_l), vget_high_s16(diff_l));
+        sse_s32[0] = vmlal_s16(sse_s32[0], vget_low_s16(diff_h), vget_low_s16(diff_h));
+        sse_s32[1] = vmlal_s16(sse_s32[1], vget_high_s16(diff_h), vget_high_s16(diff_h));
 
-        sse_u32[0] = vpadalq_u16(sse_u32[0], sq0_l);
-        sse_u32[1] = vpadalq_u16(sse_u32[1], sq0_h);
-        sse_u32[0] = vpadalq_u16(sse_u32[0], sq1_l);
-        sse_u32[1] = vpadalq_u16(sse_u32[1], sq1_h);
-
-        src += 2 * src_stride;
-        ref += 2 * ref_stride;
-        i -= 2;
-    } while (i != 0);
+        src += src_stride;
+        ref += ref_stride;
+    } while (--i != 0);
 
     *sum = vaddlvq_s16(vaddq_s16(sum_s16[0], sum_s16[1]));
-    *sse = vaddvq_u32(vaddq_u32(sse_u32[0], sse_u32[1]));
+    *sse = (uint32_t)vaddvq_s32(vaddq_s32(sse_s32[0], sse_s32[1]));
 }
 
 static inline void variance_large_neon(const uint8_t* src, int src_stride, const uint8_t* ref, int ref_stride, int w,
