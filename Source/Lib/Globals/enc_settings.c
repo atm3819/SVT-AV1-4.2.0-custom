@@ -1059,7 +1059,7 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration* config_ptr) {
     config_ptr->sharpness                         = 1;
     config_ptr->lossless                          = false;
     config_ptr->avif                              = false;
-    config_ptr->qp_scale_compress_strength        = 0;
+    config_ptr->qp_scale_compress_strength        = 1;
     config_ptr->sframe_posi.sframe_num            = 0;
     config_ptr->sframe_posi.sframe_posis          = NULL;
     config_ptr->sframe_posi.sframe_qp_num         = 0;
