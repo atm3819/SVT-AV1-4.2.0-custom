@@ -2417,7 +2417,7 @@ static int32_t compute_default_intra_period(SequenceControlSet* scs) {
     int32_t mini_gop_size = (1 << (config->hierarchical_levels));
 
     // use a 5-sec gop by default.
-    int32_t intra_period = (int)((fps + mini_gop_size) / mini_gop_size) * mini_gop_size * 5;
+    int32_t intra_period = (int)((fps + mini_gop_size) / mini_gop_size) * mini_gop_size * 10;
     if (config->intra_refresh_type == 1) {
         intra_period -= 1;
     }
@@ -3273,6 +3273,15 @@ static void derive_vq_params(SequenceControlSet* scs) {
     VqCtrls* vq_ctrl = &scs->vq_ctrls;
 
     if (scs->static_config.tune == TUNE_VQ) {
+        // Sharpness
+        vq_ctrl->sharpness_ctrls.scene_transition = 1;
+        vq_ctrl->sharpness_ctrls.tf               = 1;
+        vq_ctrl->sharpness_ctrls.unipred_bias     = 1;
+        vq_ctrl->sharpness_ctrls.ifs              = 1;
+        vq_ctrl->sharpness_ctrls.cdef             = 1;
+        vq_ctrl->sharpness_ctrls.restoration      = 1;
+        vq_ctrl->sharpness_ctrls.rdoq             = 1;
+    } else if (scs->static_config.tune == TUNE_VMAF) {
         // Sharpness
         vq_ctrl->sharpness_ctrls.scene_transition = 1;
         vq_ctrl->sharpness_ctrls.tf               = 1;
