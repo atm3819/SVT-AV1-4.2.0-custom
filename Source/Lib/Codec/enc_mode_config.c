@@ -8243,7 +8243,7 @@ void svt_aom_sig_deriv_enc_dec_allintra(PictureControlSet* pcs, ModeDecisionCont
 Used by svt_aom_sig_deriv_enc_dec and memory allocation
 */
 bool svt_aom_get_disallow_4x4_default(EncMode enc_mode) {
-    if (enc_mode <= ENC_M2) {
+    if (enc_mode <= ENC_M9) {
         return false;
     } else {
         return true;
