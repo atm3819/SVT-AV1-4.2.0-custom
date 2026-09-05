@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  pgo-build-windows-x86-64-v3:
+  pgo-build-windows-x86-64:
     runs-on: windows-latest
     env:
       CC: clang
@@ -31,10 +31,14 @@ jobs:
           mkdir -p build\videos
           cd build\videos
           Write-Host "Downloading Y4M test video..."
-          powershell -Command "(New-Object System.Net.WebClient).DownloadFile('https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m', 'park_joy_420_720p50.y4m')" -ErrorAction SilentlyContinue
-          if (Test-Path "park_joy_420_720p50.y4m") {
+          $url = 'https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m'
+          $output = 'park_joy_420_720p50.y4m'
+          try {
+              (New-Object System.Net.WebClient).DownloadFile($url, $output)
               Write-Host "Successfully downloaded"
-              Get-Item "park_joy_420_720p50.y4m" | Select-Object FullName, Length
+              Get-Item $output | Select-Object FullName, Length
+          } catch {
+              Write-Host "Download failed, will create synthetic fallback"
           }
           cd ..\..
 
@@ -120,7 +124,7 @@ jobs:
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
         with:
-          name: svt-av1-clang-windows-x86-64-v3-pgo-lto
+          name: svt-av1-clang-windows-x86-64-pgo-lto
           path: build/Bin/Release/SvtAv1EncApp.exe
           retention-days: 7
 
@@ -128,7 +132,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: profiling-data-x86-64-v3
+          name: profiling-data-x86-64
           path: |
             build/profiling.log
             build/*.profdata
