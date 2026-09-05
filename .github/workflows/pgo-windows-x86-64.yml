@@ -31,10 +31,14 @@ jobs:
           mkdir -p build\videos
           cd build\videos
           Write-Host "Downloading Y4M test video..."
-          powershell -Command "(New-Object System.Net.WebClient).DownloadFile('https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m', 'park_joy_420_720p50.y4m')" -ErrorAction SilentlyContinue
-          if (Test-Path "park_joy_420_720p50.y4m") {
+          $url = 'https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m'
+          $output = 'park_joy_420_720p50.y4m'
+          try {
+              (New-Object System.Net.WebClient).DownloadFile($url, $output)
               Write-Host "Successfully downloaded"
-              Get-Item "park_joy_420_720p50.y4m" | Select-Object FullName, Length
+              Get-Item $output | Select-Object FullName, Length
+          } catch {
+              Write-Host "Download failed, will create synthetic fallback"
           }
           cd ..\..
 
