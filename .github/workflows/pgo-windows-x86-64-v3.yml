@@ -1,3 +1,4 @@
+# File: .github/workflows/pgo-windows-x86-64-v3.yml
 name: PGO Build with Clang (Windows x86-64-v3)
 
 on:
@@ -6,6 +7,10 @@ on:
 jobs:
   pgo-build-windows-x86-64-v3:
     runs-on: windows-latest
+    env:
+      CC: clang
+      CXX: clang++
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,10 +59,24 @@ if not os.path.exists(testfile):
         run: |
           mkdir build
           cd build
-          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSVT_AV1_PGO=ON -DSVT_INTERNAL_PGO_GENERATE=ON -DSVT_INTERNAL_PGO_USE=OFF -DSVT_AV1_LTO=OFF -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS="-march=x86-64-v3" -DCMAKE_CXX_FLAGS="-march=x86-64-v3" -DBUILD_TESTING=OFF
+          cmake .. `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DSVT_AV1_PGO=ON `
+            -DSVT_INTERNAL_PGO_GENERATE=ON `
+            -DSVT_INTERNAL_PGO_USE=OFF `
+            -DSVT_AV1_LTO=OFF `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++ `
+            -DCMAKE_C_FLAGS="-march=x86-64-v3" `
+            -DCMAKE_CXX_FLAGS="-march=x86-64-v3" `
+            -DBUILD_TESTING=OFF
 
       - name: Build encoder with PGO instrumentation
-        run: cd build && cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
+        run: |
+          cd build
+          cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
 
       - name: Generate PGO profile data
         run: |
@@ -75,10 +94,24 @@ if not os.path.exists(testfile):
       - name: Configure CMake - PGO Use Phase with LTO
         run: |
           cd build
-          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSVT_AV1_PGO=ON -DSVT_INTERNAL_PGO_GENERATE=OFF -DSVT_INTERNAL_PGO_USE=ON -DSVT_AV1_LTO=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" -DBUILD_TESTING=OFF
+          cmake .. `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DSVT_AV1_PGO=ON `
+            -DSVT_INTERNAL_PGO_GENERATE=OFF `
+            -DSVT_INTERNAL_PGO_USE=ON `
+            -DSVT_AV1_LTO=ON `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++ `
+            -DCMAKE_C_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" `
+            -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" `
+            -DBUILD_TESTING=OFF
 
       - name: Build optimized binary with PGO + LTO
-        run: cd build && cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
+        run: |
+          cd build
+          cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
 
       - name: Verify binary
         run: |
