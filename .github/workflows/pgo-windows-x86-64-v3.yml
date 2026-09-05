@@ -1,0 +1,103 @@
+name: PGO Build with Clang (Windows x86-64-v3)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pgo-build-windows-x86-64-v3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install LLVM/Clang
+        uses: egor-tensin/setup-clang@v1
+        with:
+          version: latest
+          platform: x64
+
+      - name: Install CMake and Ninja
+        uses: ilammy/setup-nasm@v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Download test Y4M video
+        run: |
+          mkdir -p build\videos
+          cd build\videos
+          Write-Host "Downloading Y4M test video..."
+          powershell -Command "(New-Object System.Net.WebClient).DownloadFile('https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m', 'park_joy_420_720p50.y4m')" -ErrorAction SilentlyContinue
+          if (Test-Path "park_joy_420_720p50.y4m") {
+              Write-Host "Successfully downloaded"
+              Get-Item "park_joy_420_720p50.y4m" | Select-Object FullName, Length
+          }
+          cd ..\..
+
+      - name: Create synthetic Y4M if download failed
+        run: |
+          python -c "
+import os
+os.makedirs('build\\videos', exist_ok=True)
+testfile = 'build\\videos\\park_joy_420_720p50.y4m'
+if not os.path.exists(testfile):
+    with open(testfile, 'wb') as f:
+        f.write(b'YUV4MPEG2 W=8 H=8 F=30:1 Ip A0:0\n')
+        for frame in range(10):
+            f.write(b'FRAME\n')
+            f.write(b'\x80' * (8 * 8))
+            f.write(b'\x80' * (4 * 4))
+            f.write(b'\x80' * (4 * 4))
+"
+
+      - name: Configure CMake - PGO Generate Phase (no LTO)
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSVT_AV1_PGO=ON -DSVT_INTERNAL_PGO_GENERATE=ON -DSVT_INTERNAL_PGO_USE=OFF -DSVT_AV1_LTO=OFF -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS="-march=x86-64-v3" -DCMAKE_CXX_FLAGS="-march=x86-64-v3" -DBUILD_TESTING=OFF
+
+      - name: Build encoder with PGO instrumentation
+        run: cd build && cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Generate PGO profile data
+        run: |
+          cd build
+          .\Bin\Release\SvtAv1EncApp.exe -i videos\park_joy_420_720p50.y4m -o NUL --preset 3 --enable-tf 2 --tune 5 2>&1 | Tee-Object -FilePath profiling.log
+
+      - name: Merge PGO profile data (.profraw to .profdata)
+        run: |
+          cd build
+          $profrawFiles = Get-ChildItem *.profraw -ErrorAction SilentlyContinue
+          if ($profrawFiles.Count -gt 0) {
+              llvm-profdata merge --sparse=true *.profraw -o default.profdata
+          }
+
+      - name: Configure CMake - PGO Use Phase with LTO
+        run: |
+          cd build
+          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSVT_AV1_PGO=ON -DSVT_INTERNAL_PGO_GENERATE=OFF -DSVT_INTERNAL_PGO_USE=ON -DSVT_AV1_LTO=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" -DBUILD_TESTING=OFF
+
+      - name: Build optimized binary with PGO + LTO
+        run: cd build && cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Verify binary
+        run: |
+          cd build
+          Get-Item Bin\Release\SvtAv1EncApp.exe | Select-Object FullName, Length
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: svt-av1-clang-windows-x86-64-v3-pgo-lto
+          path: build/Bin/Release/SvtAv1EncApp.exe
+          retention-days: 7
+
+      - name: Upload profiling artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: profiling-data-x86-64-v3
+          path: |
+            build/profiling.log
+            build/*.profdata
+          retention-days: 3
