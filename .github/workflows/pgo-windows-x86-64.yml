@@ -118,14 +118,14 @@ jobs:
           Get-Item Bin\Release\SvtAv1EncApp.exe | Select-Object FullName, Length
 
       - name: Upload Windows binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: svt-av1-clang-windows-x86-64-pgo-lto
           path: build/Bin/Release/SvtAv1EncApp.exe
           retention-days: 7
 
       - name: Upload profiling artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: profiling-data-x86-64
