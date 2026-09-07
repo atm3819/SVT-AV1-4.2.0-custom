@@ -2,458 +2,393 @@ name: PGO Build with Clang (Windows x86-64)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+env:
+  CC: clang
+  CXX: clang++
+
+  # Source tree
+  SOURCE_DIR: ${{ github.workspace }}
+
+  # Separate CMake/Ninja build tree
+  BUILD_DIR: ${{ github.workspace }}\..\build
+
+  # Separate PGO training-video directory
+  PGO_VIDEO_DIR: ${{ github.workspace }}\..\pgo-video
 
 jobs:
-  pgo-build-windows-x86-64:
+  pgo-build:
     runs-on: windows-latest
 
-    env:
-      CC: clang
-      CXX: clang++
-      CMAKE_BUILD_TYPE: Release
-
     steps:
-      # ------------------------------------------------------------
-      # Checkout
-      # ------------------------------------------------------------
-      - name: Checkout repository
+
+      # ============================================================
+      # SOURCE
+      # ============================================================
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # LLVM / Clang
-      # ------------------------------------------------------------
-      - name: Install LLVM/Clang
+      # ============================================================
+      # CLANG
+      # ============================================================
+      - name: Setup Clang
         uses: egor-tensin/setup-clang@v1
         with:
           version: latest
           platform: x64
 
-      # ------------------------------------------------------------
+      # ============================================================
       # NASM
-      # ------------------------------------------------------------
-      - name: Install NASM
+      # ============================================================
+      - name: Setup NASM
         uses: ilammy/setup-nasm@v1
 
-      # ------------------------------------------------------------
-      # Ninja
-      # ------------------------------------------------------------
+      # ============================================================
+      # NINJA
+      # ============================================================
       - name: Install Ninja
-        shell: pwsh
+        shell: cmd
         run: |
-          choco install ninja -y
+          choco install ninja -y --no-progress
           ninja --version
 
-      # ------------------------------------------------------------
-      # Show toolchain versions
-      # ------------------------------------------------------------
-      - name: Show toolchain
-        shell: pwsh
+      # ============================================================
+      # CHECK TOOLCHAIN
+      # ============================================================
+      - name: Check toolchain
+        shell: cmd
         run: |
+          where clang
+          where clang++
+          where lld-link
+          where llvm-profdata
+          where ninja
+
           clang --version
           clang++ --version
-          cmake --version
-          ninja --version
+          lld-link --version
           llvm-profdata --version
+          ninja --version
 
-      # ------------------------------------------------------------
-      # Download PGO training video
-      # ------------------------------------------------------------
-      - name: Download test Y4M video
-        shell: pwsh
-        run: |
-          $videoDir = Join-Path $PWD "build\videos"
-          $video = Join-Path $videoDir "park_joy_420_720p50.y4m"
-
-          New-Item -ItemType Directory -Force -Path $videoDir | Out-Null
-
-          $url = "https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m"
-
-          Write-Host "Downloading PGO training video..."
-          Write-Host "URL: $url"
-          Write-Host "Output: $video"
-
-          try {
-              Invoke-WebRequest `
-                -Uri $url `
-                -OutFile $video `
-                -UseBasicParsing
-
-              $file = Get-Item $video -ErrorAction Stop
-
-              if ($file.Length -lt 1000000) {
-                  throw "Downloaded file is unexpectedly small: $($file.Length) bytes"
-              }
-
-              Write-Host "Download successful."
-              Write-Host "Size: $($file.Length) bytes"
-          }
-          catch {
-              Write-Warning "Video download failed."
-              Write-Warning $_.Exception.Message
-          }
-
-      # ------------------------------------------------------------
-      # Synthetic fallback video
+      # ============================================================
+      # PREPARE DIRECTORIES
       #
-      # This is only used if the real training video could not
-      # be downloaded.
-      # ------------------------------------------------------------
-      - name: Create synthetic Y4M fallback
-        shell: pwsh
+      # Source:
+      #   %GITHUB_WORKSPACE%
+      #
+      # Build:
+      #   %GITHUB_WORKSPACE%\..\build
+      #
+      # Executable:
+      #   %GITHUB_WORKSPACE%\Bin\Release\SvtAv1EncApp.exe
+      #
+      # PGO profiles:
+      #   %GITHUB_WORKSPACE%\..\build\*.profraw
+      # ============================================================
+      - name: Prepare directories
+        shell: cmd
         run: |
-          $video = Join-Path $PWD "build\videos\park_joy_420_720p50.y4m"
+          if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
+          if exist "%PGO_VIDEO_DIR%" rmdir /s /q "%PGO_VIDEO_DIR%"
 
-          if (Test-Path $video) {
-              Write-Host "Training video already exists."
-              exit 0
-          }
+          mkdir "%BUILD_DIR%"
+          mkdir "%PGO_VIDEO_DIR%"
 
-          Write-Warning "Creating synthetic fallback Y4M."
+          echo SOURCE_DIR=%SOURCE_DIR%
+          echo BUILD_DIR=%BUILD_DIR%
+          echo PGO_VIDEO_DIR=%PGO_VIDEO_DIR%
 
-          $header = [System.Text.Encoding]::ASCII.GetBytes(
-              "YUV4MPEG2 W=640 H=360 F=30:1 Ip A0:0 C420jpeg`n"
+      # ============================================================
+      # DOWNLOAD PGO TRAINING VIDEO
+      # ============================================================
+      - name: Download PGO training video
+        shell: cmd
+        working-directory: ${{ env.PGO_VIDEO_DIR }}
+        run: |
+          curl.exe -L --fail --retry 5 --retry-delay 3 ^
+            -o park_joy_420_720p50.y4m ^
+            https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m
+
+          if not exist "park_joy_420_720p50.y4m" (
+            echo ERROR: Training video was not downloaded.
+            exit /b 1
           )
 
-          $frameHeader = [System.Text.Encoding]::ASCII.GetBytes("FRAME`n")
+          dir park_joy_420_720p50.y4m
 
-          # 640x360 YUV420:
-          # Y = 230400 bytes
-          # U = 57600 bytes
-          # V = 57600 bytes
-          $y = [byte[]](0..230399 | ForEach-Object { 128 })
-          $u = [byte[]](0..57599  | ForEach-Object { 128 })
-          $v = [byte[]](0..57599  | ForEach-Object { 128 })
-
-          $stream = [System.IO.File]::OpenWrite($video)
-
-          try {
-              $stream.Write($header, 0, $header.Length)
-
-              for ($frame = 0; $frame -lt 30; $frame++) {
-                  $stream.Write($frameHeader, 0, $frameHeader.Length)
-                  $stream.Write($y, 0, $y.Length)
-                  $stream.Write($u, 0, $u.Length)
-                  $stream.Write($v, 0, $v.Length)
-              }
-          }
-          finally {
-              $stream.Dispose()
-          }
-
-          Write-Host "Synthetic fallback created:"
-          Get-Item $video | Select-Object FullName, Length
-
-      # ------------------------------------------------------------
-      # Configure PGO GENERATE build
+      # ============================================================
+      # PGO GENERATE CONFIGURATION
       #
-      # IMPORTANT:
-      # build already exists because the video is stored under
-      # build/videos. Do NOT run "mkdir build" here.
-      # ------------------------------------------------------------
-      - name: Configure CMake - PGO Generate
-        shell: pwsh
+      # PGO ON
+      # LTO OFF
+      #
+      # The project's CMakeLists handles:
+      #   -fprofile-generate=%BUILD_DIR%
+      # ============================================================
+      - name: Configure PGO generate build
+        shell: cmd
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
-          Set-Location build
-
-          cmake .. `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DBUILD_APPS=ON `
-            -DBUILD_TESTING=OFF `
-            -DSVT_AV1_PGO=ON `
-            -DSVT_INTERNAL_PGO_GENERATE=ON `
-            -DSVT_INTERNAL_PGO_USE=OFF `
-            -DSVT_AV1_LTO=OFF `
-            -DSVT_AV1_PGO_DIR="$PWD" `
-            -DCMAKE_C_COMPILER=clang `
-            -DCMAKE_CXX_COMPILER=clang++ `
-            -DCMAKE_C_FLAGS="-march=x86-64" `
+          cmake ^
+            -S "%SOURCE_DIR%" ^
+            -B "%BUILD_DIR%" ^
+            -G "Ninja" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DBUILD_TESTING=OFF ^
+            -DBUILD_APPS=ON ^
+            -DSVT_AV1_PGO=ON ^
+            -DSVT_AV1_LTO=OFF ^
+            -DSVT_INTERNAL_PGO_GENERATE=ON ^
+            -DSVT_INTERNAL_PGO_USE=OFF ^
+            -DSVT_AV1_PGO_DIR="%BUILD_DIR%" ^
+            -DCMAKE_C_COMPILER=clang ^
+            -DCMAKE_CXX_COMPILER=clang++ ^
+            -DCMAKE_C_FLAGS="-march=x86-64" ^
             -DCMAKE_CXX_FLAGS="-march=x86-64"
 
-      # ------------------------------------------------------------
-      # Build instrumented encoder
-      # ------------------------------------------------------------
-      - name: Build encoder with PGO instrumentation
-        shell: pwsh
-        run: |
-          Set-Location build
+          if errorlevel 1 exit /b 1
 
-          cmake --build . `
-            --target SvtAv1EncApp `
+      # ============================================================
+      # BUILD INSTRUMENTED ENCODER
+      # ============================================================
+      - name: Build PGO instrumented encoder
+        shell: cmd
+        run: |
+          cmake --build "%BUILD_DIR%" ^
+            --config Release ^
+            --target SvtAv1EncApp ^
             --parallel
 
-      # ------------------------------------------------------------
-      # Locate encoder
-      # ------------------------------------------------------------
-      - name: Locate instrumented encoder
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem `
-            -Path build `
-            -Filter "SvtAv1EncApp.exe" `
-            -Recurse `
-            -File |
-            Select-Object -First 1
+          if errorlevel 1 exit /b 1
 
-          if (-not $exe) {
-              Write-Error "SvtAv1EncApp.exe was not found."
+          if not exist "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" (
+            echo ERROR: SvtAv1EncApp.exe was not found at:
+            echo %SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe
+            echo.
+            echo Searching source tree...
+            where /r "%SOURCE_DIR%" SvtAv1EncApp.exe
+            exit /b 1
+          )
 
-              Write-Host "Available executables:"
-              Get-ChildItem build -Recurse -Filter "*.exe" -File |
-                Select-Object FullName
+          echo.
+          echo PGO instrumented encoder:
+          dir "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe"
 
-              exit 1
-          }
-
-          Write-Host "Encoder found:"
-          Write-Host $exe.FullName
-
-      # ------------------------------------------------------------
-      # Run PGO training workload
+      # ============================================================
+      # RUN PGO TRAINING
       #
-      # LLVM_PROFILE_FILE forces the raw profile into build/.
-      # This avoids guessing where Clang writes .profraw.
-      # ------------------------------------------------------------
-      - name: Generate PGO profile data
-        shell: pwsh
+      # The executable is in the SOURCE tree.
+      # The profiles are generated in the BUILD tree.
+      # ============================================================
+      - name: Run PGO training
+        shell: cmd
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
-          Set-Location build
+          if not exist "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" (
+            echo ERROR: SvtAv1EncApp.exe does not exist.
+            exit /b 1
+          )
 
-          $exe = Get-ChildItem `
-            -Path . `
-            -Filter "SvtAv1EncApp.exe" `
-            -Recurse `
-            -File |
-            Select-Object -First 1
+          echo Running PGO training...
 
-          if (-not $exe) {
-              Write-Error "SvtAv1EncApp.exe was not found."
-              exit 1
-          }
+          "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" ^
+            -i "%PGO_VIDEO_DIR%\park_joy_420_720p50.y4m" ^
+            --preset 8 ^
+            --width 1280 ^
+            --height 720 ^
+            --fps-num 50 ^
+            --fps-denom 1 ^
+            --input-depth 8 ^
+            --color-format 1 ^
+            -b 8 ^
+            -n 1000 ^
+            -o NUL
 
-          Write-Host "Using encoder:"
-          Write-Host $exe.FullName
+          if errorlevel 1 (
+            echo ERROR: PGO training failed.
+            exit /b 1
+          )
 
-          $env:LLVM_PROFILE_FILE = Join-Path $PWD "%m.profraw"
+          echo.
+          echo Generated PGO profiles:
+          dir /b "%BUILD_DIR%\*.profraw"
 
-          Write-Host "LLVM_PROFILE_FILE=$env:LLVM_PROFILE_FILE"
-
-          & $exe.FullName `
-            -i "videos\park_joy_420_720p50.y4m" `
-            -o NUL `
-            --preset 3 `
-            --enable-tf 2 `
-            --tune 5 `
-            2>&1 |
-            Tee-Object -FilePath "profiling.log"
-
-          if ($LASTEXITCODE -ne 0) {
-              Write-Error "SvtAv1EncApp failed with exit code $LASTEXITCODE."
-              exit $LASTEXITCODE
-          }
-
-          Write-Host ""
-          Write-Host "Generated profile files:"
-
-          $profiles = Get-ChildItem `
-            -Path . `
-            -Filter "*.profraw" `
-            -File
-
-          if (-not $profiles) {
-              Write-Error "No .profraw files were generated."
-              exit 1
-          }
-
-          $profiles |
-            Select-Object FullName, Length
-
-      # ------------------------------------------------------------
-      # Merge LLVM profiles
-      # ------------------------------------------------------------
-      - name: Merge PGO profile data
-        shell: pwsh
+      # ============================================================
+      # VERIFY PGO PROFILES
+      # ============================================================
+      - name: Verify PGO profiles
+        shell: cmd
         run: |
-          Set-Location build
+          if not exist "%BUILD_DIR%\*.profraw" (
+            echo ERROR: No .profraw files were generated.
+            echo.
+            echo Build directory contents:
+            dir /a "%BUILD_DIR%"
+            exit /b 1
+          )
 
-          $profiles = Get-ChildItem `
-            -Path . `
-            -Filter "*.profraw" `
-            -File
+          echo Generated profile files:
+          dir "%BUILD_DIR%\*.profraw"
 
-          if (-not $profiles) {
-              Write-Error "No .profraw files found."
-              exit 1
-          }
+      # ============================================================
+      # MERGE PGO PROFILES
+      #
+      # *.profraw -> default.profdata
+      # ============================================================
+      - name: Merge PGO profiles
+        shell: cmd
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          echo Merging LLVM PGO profiles...
 
-          Write-Host "Merging profiles:"
-
-          $profiles |
-            ForEach-Object {
-              Write-Host "  $($_.FullName)"
-            }
-
-          llvm-profdata merge `
-            --sparse `
-            $profiles.FullName `
+          llvm-profdata merge --sparse=true ^
+            *.profraw ^
             -o default.profdata
 
-          if ($LASTEXITCODE -ne 0) {
-              Write-Error "llvm-profdata merge failed."
-              exit $LASTEXITCODE
-          }
+          if errorlevel 1 (
+            echo ERROR: llvm-profdata merge failed.
+            exit /b 1
+          )
 
-          if (-not (Test-Path "default.profdata")) {
-              Write-Error "default.profdata was not created."
-              exit 1
-          }
+          if not exist "default.profdata" (
+            echo ERROR: default.profdata was not created.
+            exit /b 1
+          )
 
-          Write-Host ""
-          Write-Host "Merged profile:"
-          Get-Item default.profdata |
-            Select-Object FullName, Length
+          echo.
+          echo Merged profile:
+          dir default.profdata
 
-      # ------------------------------------------------------------
-      # Reconfigure for PGO USE + LTO
-      # ------------------------------------------------------------
-      - name: Configure CMake - PGO Use + LTO
-        shell: pwsh
+      # ============================================================
+      # FINAL PGO + LTO CONFIGURATION
+      #
+      # PGO:
+      #   SVT_AV1_PGO=ON
+      #   SVT_INTERNAL_PGO_USE=ON
+      #
+      # LTO:
+      #   SVT_AV1_LTO=ON
+      #
+      # Explicit LLVM LTO:
+      #   -flto
+      #   -fuse-ld=lld
+      #
+      # This is the ONLY PGO USE build.
+      # ============================================================
+      - name: Configure final PGO plus LTO build
+        shell: cmd
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
-          Set-Location build
+          cmake ^
+            -S "%SOURCE_DIR%" ^
+            -B "%BUILD_DIR%" ^
+            -G "Ninja" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DBUILD_TESTING=OFF ^
+            -DBUILD_APPS=ON ^
+            -DSVT_AV1_PGO=ON ^
+            -DSVT_AV1_LTO=ON ^
+            -DSVT_INTERNAL_PGO_GENERATE=OFF ^
+            -DSVT_INTERNAL_PGO_USE=ON ^
+            -DSVT_AV1_PGO_DIR="%BUILD_DIR%" ^
+            -DCMAKE_C_COMPILER=clang ^
+            -DCMAKE_CXX_COMPILER=clang++ ^
+            -DCMAKE_C_FLAGS="-march=x86-64 -flto -fuse-ld=lld" ^
+            -DCMAKE_CXX_FLAGS="-march=x86-64 -flto -fuse-ld=lld" ^
+            -DCMAKE_EXE_LINKER_FLAGS="-flto -fuse-ld=lld" ^
+            -DCMAKE_SHARED_LINKER_FLAGS="-flto -fuse-ld=lld" ^
+            -DCMAKE_MODULE_LINKER_FLAGS="-flto -fuse-ld=lld"
 
-          if (-not (Test-Path "default.profdata")) {
-              Write-Error "default.profdata is missing."
-              exit 1
-          }
+          if errorlevel 1 exit /b 1
 
-          cmake .. `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DBUILD_APPS=ON `
-            -DBUILD_TESTING=OFF `
-            -DSVT_AV1_PGO=ON `
-            -DSVT_INTERNAL_PGO_GENERATE=OFF `
-            -DSVT_INTERNAL_PGO_USE=ON `
-            -DSVT_AV1_PGO_DIR="$PWD" `
-            -DSVT_AV1_LTO=ON `
-            -DCMAKE_C_COMPILER=clang `
-            -DCMAKE_CXX_COMPILER=clang++ `
-            -DCMAKE_C_FLAGS="-march=x86-64 -flto -fuse-ld=lld" `
-            -DCMAKE_CXX_FLAGS="-march=x86-64 -flto -fuse-ld=lld"
-
-      # ------------------------------------------------------------
-      # Build final optimized encoder
-      # ------------------------------------------------------------
-      - name: Build optimized binary with PGO + LTO
-        shell: pwsh
+      # ============================================================
+      # FINAL BUILD
+      #
+      # PGO ON
+      # LTO ON
+      # ============================================================
+      - name: Build final PGO plus LTO encoder
+        shell: cmd
         run: |
-          Set-Location build
-
-          cmake --build . `
-            --target SvtAv1EncApp `
-            --clean-first `
+          cmake --build "%BUILD_DIR%" ^
+            --config Release ^
+            --target SvtAv1EncApp ^
             --parallel
 
-      # ------------------------------------------------------------
-      # Find final executable
-      # ------------------------------------------------------------
-      - name: Verify final binary
-        shell: pwsh
+          if errorlevel 1 (
+            echo ERROR: Final PGO + LTO build failed.
+            exit /b 1
+          )
+
+          if not exist "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" (
+            echo ERROR: Final SvtAv1EncApp.exe was not found.
+            echo.
+            echo Expected:
+            echo %SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe
+            echo.
+            echo Searching source tree...
+            where /r "%SOURCE_DIR%" SvtAv1EncApp.exe
+            exit /b 1
+          )
+
+          echo.
+          echo ==========================================
+          echo FINAL PGO + LTO BUILD SUCCESS
+          echo ==========================================
+          dir "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe"
+
+      # ============================================================
+      # TEST FINAL EXECUTABLE
+      # ============================================================
+      - name: Test final encoder
+        shell: cmd
         run: |
-          $exe = Get-ChildItem `
-            -Path build `
-            -Filter "SvtAv1EncApp.exe" `
-            -Recurse `
-            -File |
-            Sort-Object Length -Descending |
-            Select-Object -First 1
+          "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" --help > "%TEMP%\svt-help.txt"
 
-          if (-not $exe) {
-              Write-Error "Final SvtAv1EncApp.exe was not found."
+          if errorlevel 1 (
+            echo ERROR: SvtAv1EncApp.exe failed to execute.
+            type "%TEMP%\svt-help.txt"
+            exit /b 1
+          )
 
-              Write-Host ""
-              Write-Host "Available executables:"
-              Get-ChildItem build -Recurse -Filter "*.exe" -File |
-                Select-Object FullName, Length
+          type "%TEMP%\svt-help.txt"
 
-              exit 1
-          }
-
-          Write-Host ""
-          Write-Host "=========================================="
-          Write-Host "Final SVT-AV1 encoder"
-          Write-Host "=========================================="
-          Write-Host "Path  : $($exe.FullName)"
-          Write-Host "Size  : $($exe.Length) bytes"
-          Write-Host "=========================================="
-
-          Write-Host ""
-          Write-Host "Testing encoder:"
-          & $exe.FullName --help | Select-Object -First 20
-
-          if ($LASTEXITCODE -ne 0) {
-              Write-Error "Encoder test failed."
-              exit $LASTEXITCODE
-          }
-
-      # ------------------------------------------------------------
-      # Copy final binary to predictable artifact directory
-      # ------------------------------------------------------------
-      - name: Prepare artifact
-        shell: pwsh
+      # ============================================================
+      # SHOW FINAL RESULTS
+      # ============================================================
+      - name: Show build results
+        shell: cmd
         run: |
-          $exe = Get-ChildItem `
-            -Path build `
-            -Filter "SvtAv1EncApp.exe" `
-            -Recurse `
-            -File |
-            Sort-Object Length -Descending |
-            Select-Object -First 1
+          echo.
+          echo ==========================================
+          echo SOURCE TREE - FINAL EXECUTABLE
+          echo ==========================================
+          dir "%SOURCE_DIR%\Bin\Release"
 
-          if (-not $exe) {
-              Write-Error "SvtAv1EncApp.exe was not found."
-              exit 1
-          }
+          echo.
+          echo ==========================================
+          echo EXTERNAL BUILD TREE - PGO DATA
+          echo ==========================================
+          dir "%BUILD_DIR%"
 
-          New-Item `
-            -ItemType Directory `
-            -Force `
-            -Path "artifact" |
-            Out-Null
-
-          Copy-Item `
-            $exe.FullName `
-            "artifact\SvtAv1EncApp.exe" `
-            -Force
-
-          Write-Host "Artifact prepared:"
-          Get-Item "artifact\SvtAv1EncApp.exe" |
-            Select-Object FullName, Length
-
-      # ------------------------------------------------------------
-      # Upload final binary
-      # ------------------------------------------------------------
-      - name: Upload Windows x86-64 PGO + LTO binary
+      # ============================================================
+      # UPLOAD FINAL EXECUTABLE
+      # ============================================================
+      - name: Upload SvtAv1EncApp.exe
         uses: actions/upload-artifact@v4
         with:
-          name: svt-av1-clang-windows-x86-64-pgo-lto
-          path: artifact/SvtAv1EncApp.exe
+          name: SvtAv1EncApp-Windows-x86-64-PGO-LTO
+          path: ${{ github.workspace }}/Bin/Release/SvtAv1EncApp.exe
           if-no-files-found: error
-          retention-days: 7
-
-      # ------------------------------------------------------------
-      # Upload PGO diagnostic data
-      # ------------------------------------------------------------
-      - name: Upload PGO diagnostic artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: profiling-data-x86-64
-          path: |
-            build/profiling.log
-            build/*.profraw
-            build/*.profdata
-          if-no-files-found: ignore
-          retention-days: 3
+          compression-level: 9
