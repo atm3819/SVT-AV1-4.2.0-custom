@@ -197,7 +197,7 @@ jobs:
 
           "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" ^
             -i "%PGO_VIDEO_DIR%\park_joy_420_720p50.y4m" ^
-            --preset 8 ^
+            --preset 3 ^
             --width 1280 ^
             --height 720 ^
             --fps-num 50 ^
