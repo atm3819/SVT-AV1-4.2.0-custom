@@ -94,7 +94,25 @@ jobs:
       - name: Generate PGO profile data
         run: |
           cd build
-          .\Bin\Release\SvtAv1EncApp.exe -i videos\park_joy_420_720p50.y4m -o NUL --preset 3 --enable-tf 2 --tune 5 2>&1 | Tee-Object -FilePath profiling.log
+
+$exe = Get-ChildItem -Path . -Filter SvtAv1EncApp.exe -Recurse -File |
+    Select-Object -First 1
+
+if (-not $exe) {
+    Write-Error "SvtAv1EncApp.exe was not found!"
+    Get-ChildItem -Recurse -Filter *.exe | Select-Object FullName
+    exit 1
+}
+
+Write-Host "Using encoder: $($exe.FullName)"
+
+& $exe.FullName `
+    -i videos\park_joy_420_720p50.y4m `
+    -o NUL `
+    --preset 3 `
+    --enable-tf 2 `
+    --tune 5 2>&1 |
+    Tee-Object -FilePath profiling.log
 
       - name: Merge PGO profile data (.profraw to .profdata)
         run: |
