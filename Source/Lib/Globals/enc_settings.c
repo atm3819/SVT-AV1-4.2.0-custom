@@ -1070,7 +1070,7 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration* config_ptr) {
     config_ptr->adaptive_film_grain               = true;
     config_ptr->max_tx_size                       = 64;
     config_ptr->extended_crf_qindex_offset        = 0;
-    config_ptr->ac_bias                           = 1.0;
+    config_ptr->ac_bias                           = 2.0;
     config_ptr->hbd_mds                           = DEFAULT;
 
     // Ref-frame management disabled by default → legacy bit-exact behavior
