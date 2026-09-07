@@ -204,8 +204,9 @@ jobs:
             --fps-denom 1 ^
             --input-depth 8 ^
             --color-format 1 ^
+            --tune 5 ^
             -b 8 ^
-            -n 1000 ^
+            -enable-tf 2 ^
             -o NUL
 
           if errorlevel 1 (
