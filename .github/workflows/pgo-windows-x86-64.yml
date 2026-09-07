@@ -71,7 +71,6 @@ jobs:
 
       - name: Configure CMake - PGO Generate Phase (no LTO)
         run: |
-          mkdir build
           cd build
           cmake .. `
             -G "Ninja" `
