@@ -95,24 +95,24 @@ jobs:
         run: |
           cd build
 
-$exe = Get-ChildItem -Path . -Filter SvtAv1EncApp.exe -Recurse -File |
-    Select-Object -First 1
+          $exe = Get-ChildItem -Path . -Filter SvtAv1EncApp.exe -Recurse -File |
+                 Select-Object -First 1
 
-if (-not $exe) {
-    Write-Error "SvtAv1EncApp.exe was not found!"
-    Get-ChildItem -Recurse -Filter *.exe | Select-Object FullName
-    exit 1
-}
+          if (-not $exe) {
+             Write-Error "SvtAv1EncApp.exe was not found!"
+             Get-ChildItem -Recurse -Filter *.exe | Select-Object FullName
+             exit 1
+          }
 
-Write-Host "Using encoder: $($exe.FullName)"
+          Write-Host "Using encoder: $($exe.FullName)"
 
-& $exe.FullName `
-    -i videos\park_joy_420_720p50.y4m `
-    -o NUL `
-    --preset 3 `
-    --enable-tf 2 `
-    --tune 5 2>&1 |
-    Tee-Object -FilePath profiling.log
+          & $exe.FullName `
+              -i videos\park_joy_420_720p50.y4m `
+              -o NUL `
+              --preset 3 `
+              --enable-tf 2 `
+              --tune 5 2>&1 |
+              Tee-Object -FilePath profiling.log
 
       - name: Merge PGO profile data (.profraw to .profdata)
         run: |
