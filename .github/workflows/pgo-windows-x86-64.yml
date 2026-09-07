@@ -206,7 +206,7 @@ jobs:
             --color-format 1 ^
             --tune 5 ^
             -b 8 ^
-            -enable-tf 2 ^
+            --enable-tf 2 ^
             -o NUL
 
           if errorlevel 1 (
