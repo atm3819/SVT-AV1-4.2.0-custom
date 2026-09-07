@@ -1,4 +1,3 @@
-```yaml
 name: PGO Build with Clang (Windows x86-64)
 
 on:
@@ -458,4 +457,3 @@ jobs:
             build/*.profdata
           if-no-files-found: ignore
           retention-days: 3
-```
