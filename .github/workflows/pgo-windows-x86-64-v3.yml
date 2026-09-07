@@ -3,137 +3,386 @@ name: PGO Build with Clang (Windows x86-64-v3)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  CC: clang
+  CXX: clang++
+
+  # Source tree
+  SOURCE_DIR: ${{ github.workspace }}
+
+  # Separate CMake/Ninja build tree
+  BUILD_DIR: ${{ github.workspace }}\..\build
+
+  # Separate PGO training-video directory
+  PGO_VIDEO_DIR: ${{ github.workspace }}\..\pgo-video
+
 jobs:
-  pgo-build-windows-x86-64:
+  pgo-build:
     runs-on: windows-latest
-    env:
-      CC: clang
-      CXX: clang++
 
     steps:
-      - name: Checkout repository
+
+      # ============================================================
+      # SOURCE
+      # ============================================================
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install LLVM/Clang
+      # ============================================================
+      # CLANG
+      # ============================================================
+      - name: Setup Clang
         uses: egor-tensin/setup-clang@v1
         with:
           version: latest
           platform: x64
 
-      - name: Install CMake and Ninja
+      # ============================================================
+      # NASM
+      # ============================================================
+      - name: Setup NASM
         uses: ilammy/setup-nasm@v1
 
+      # ============================================================
+      # NINJA
+      # ============================================================
       - name: Install Ninja
-        run: choco install ninja -y
-
-      - name: Download test Y4M video
+        shell: cmd
         run: |
-          mkdir -p build\videos
-          cd build\videos
-          Write-Host "Downloading Y4M test video..."
-          $url = 'https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m'
-          $output = 'park_joy_420_720p50.y4m'
-          try {
-              (New-Object System.Net.WebClient).DownloadFile($url, $output)
-              Write-Host "Successfully downloaded"
-              Get-Item $output | Select-Object FullName, Length
-          } catch {
-              Write-Host "Download failed, will create synthetic fallback"
-          }
-          cd ..\..
+          choco install ninja -y --no-progress
+          ninja --version
 
-      - name: Create synthetic Y4M if download failed
+      # ============================================================
+      # CHECK TOOLCHAIN
+      # ============================================================
+      - name: Check toolchain
+        shell: cmd
         run: |
-          python << 'EOF'
-          import os
-          os.makedirs('build\\videos', exist_ok=True)
-          testfile = 'build\\videos\\park_joy_420_720p50.y4m'
-          if not os.path.exists(testfile):
-              with open(testfile, 'wb') as f:
-                  f.write(b'YUV4MPEG2 W=8 H=8 F=30:1 Ip A0:0\n')
-                  for frame in range(10):
-                      f.write(b'FRAME\n')
-                      f.write(b'\x80' * (8 * 8))
-                      f.write(b'\x80' * (4 * 4))
-                      f.write(b'\x80' * (4 * 4))
-          EOF
+          where clang
+          where clang++
+          where lld-link
+          where llvm-profdata
+          where ninja
 
-      - name: Configure CMake - PGO Generate Phase (no LTO)
+          clang --version
+          clang++ --version
+          lld-link --version
+          llvm-profdata --version
+          ninja --version
+
+      # ============================================================
+      # PREPARE DIRECTORIES
+      #
+      # Source:
+      #   %GITHUB_WORKSPACE%
+      #
+      # Build:
+      #   %GITHUB_WORKSPACE%\..\build
+      #
+      # Executable:
+      #   %GITHUB_WORKSPACE%\Bin\Release\SvtAv1EncApp.exe
+      #
+      # PGO profiles:
+      #   %GITHUB_WORKSPACE%\..\build\*.profraw
+      # ============================================================
+      - name: Prepare directories
+        shell: cmd
         run: |
-          mkdir build
-          cd build
-          cmake .. `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DSVT_AV1_PGO=ON `
-            -DSVT_INTERNAL_PGO_GENERATE=ON `
-            -DSVT_INTERNAL_PGO_USE=OFF `
-            -DSVT_AV1_LTO=OFF `
-            -DCMAKE_C_COMPILER=clang `
-            -DCMAKE_CXX_COMPILER=clang++ `
-            -DCMAKE_C_FLAGS="-march=x86-64-v3" `
-            -DCMAKE_CXX_FLAGS="-march=x86-64-v3" `
-            -DBUILD_TESTING=OFF
+          if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
+          if exist "%PGO_VIDEO_DIR%" rmdir /s /q "%PGO_VIDEO_DIR%"
 
-      - name: Build encoder with PGO instrumentation
+          mkdir "%BUILD_DIR%"
+          mkdir "%PGO_VIDEO_DIR%"
+
+          echo SOURCE_DIR=%SOURCE_DIR%
+          echo BUILD_DIR=%BUILD_DIR%
+          echo PGO_VIDEO_DIR=%PGO_VIDEO_DIR%
+
+      # ============================================================
+      # DOWNLOAD PGO TRAINING VIDEO
+      # ============================================================
+      - name: Download PGO training video
+        shell: cmd
+        working-directory: ${{ env.PGO_VIDEO_DIR }}
         run: |
-          cd build
-          cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
+          curl.exe -L --fail --retry 5 --retry-delay 3 ^
+            -o park_joy_420_720p50.y4m ^
+            https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m
 
-      - name: Generate PGO profile data
+          if not exist "park_joy_420_720p50.y4m" (
+            echo ERROR: Training video was not downloaded.
+            exit /b 1
+          )
+
+          dir park_joy_420_720p50.y4m
+
+      # ============================================================
+      # PGO GENERATE CONFIGURATION
+      #
+      # PGO ON
+      # LTO OFF
+      #
+      # The project's CMakeLists handles:
+      #   -fprofile-generate=%BUILD_DIR%
+      # ============================================================
+      - name: Configure PGO generate build
+        shell: cmd
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
-          cd build
-          .\Bin\Release\SvtAv1EncApp.exe -i videos\park_joy_420_720p50.y4m -o NUL --preset 3 --enable-tf 2 --tune 5 2>&1 | Tee-Object -FilePath profiling.log
+          cmake ^
+            -S "%SOURCE_DIR%" ^
+            -B "%BUILD_DIR%" ^
+            -G "Ninja" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DBUILD_TESTING=OFF ^
+            -DBUILD_APPS=ON ^
+            -DSVT_AV1_PGO=ON ^
+            -DSVT_AV1_LTO=OFF ^
+            -DSVT_INTERNAL_PGO_GENERATE=ON ^
+            -DSVT_INTERNAL_PGO_USE=OFF ^
+            -DSVT_AV1_PGO_DIR="%BUILD_DIR%" ^
+            -DCMAKE_C_COMPILER=clang ^
+            -DCMAKE_CXX_COMPILER=clang++ ^
+            -DCMAKE_C_FLAGS="-march=x86-64-v3" ^
+            -DCMAKE_CXX_FLAGS="-march=x86-64-v3"
 
-      - name: Merge PGO profile data (.profraw to .profdata)
+          if errorlevel 1 exit /b 1
+
+      # ============================================================
+      # BUILD INSTRUMENTED ENCODER
+      # ============================================================
+      - name: Build PGO instrumented encoder
+        shell: cmd
         run: |
-          cd build
-          $profrawFiles = Get-ChildItem *.profraw -ErrorAction SilentlyContinue
-          if ($profrawFiles.Count -gt 0) {
-              llvm-profdata merge --sparse=true *.profraw -o default.profdata
-          }
+          cmake --build "%BUILD_DIR%" ^
+            --config Release ^
+            --target SvtAv1EncApp ^
+            --parallel
 
-      - name: Configure CMake - PGO Use Phase with LTO
+          if errorlevel 1 exit /b 1
+
+          if not exist "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" (
+            echo ERROR: SvtAv1EncApp.exe was not found at:
+            echo %SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe
+            echo.
+            echo Searching source tree...
+            where /r "%SOURCE_DIR%" SvtAv1EncApp.exe
+            exit /b 1
+          )
+
+          echo.
+          echo PGO instrumented encoder:
+          dir "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe"
+
+      # ============================================================
+      # RUN PGO TRAINING
+      #
+      # The executable is in the SOURCE tree.
+      # The profiles are generated in the BUILD tree.
+      # ============================================================
+      - name: Run PGO training
+        shell: cmd
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
-          cd build
-          cmake .. `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DSVT_AV1_PGO=ON `
-            -DSVT_INTERNAL_PGO_GENERATE=OFF `
-            -DSVT_INTERNAL_PGO_USE=ON `
-            -DSVT_AV1_LTO=ON `
-            -DCMAKE_C_COMPILER=clang `
-            -DCMAKE_CXX_COMPILER=clang++ `
-            -DCMAKE_C_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" `
-            -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" `
-            -DBUILD_TESTING=OFF
+          if not exist "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" (
+            echo ERROR: SvtAv1EncApp.exe does not exist.
+            exit /b 1
+          )
 
-      - name: Build optimized binary with PGO + LTO
+          echo Running PGO training...
+
+          "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" ^
+            -i "%PGO_VIDEO_DIR%\park_joy_420_720p50.y4m" ^
+            --preset 8 ^
+            --width 1280 ^
+            --height 720 ^
+            --fps-num 50 ^
+            --fps-denom 1 ^
+            --input-depth 8 ^
+            --color-format 1 ^
+            -b 8 ^
+            -n 1000 ^
+            -o NUL
+
+          if errorlevel 1 (
+            echo ERROR: PGO training failed.
+            exit /b 1
+          )
+
+          echo.
+          echo Generated PGO profiles:
+          dir /b "%BUILD_DIR%\*.profraw"
+
+      # ============================================================
+      # VERIFY PGO PROFILES
+      # ============================================================
+      - name: Verify PGO profiles
+        shell: cmd
         run: |
-          cd build
-          cmake --build . --target SvtAv1EncApp --config Release -j $env:NUMBER_OF_PROCESSORS
+          if not exist "%BUILD_DIR%\*.profraw" (
+            echo ERROR: No .profraw files were generated.
+            echo.
+            echo Build directory contents:
+            dir /a "%BUILD_DIR%"
+            exit /b 1
+          )
 
-      - name: Verify binary
+          echo Generated profile files:
+          dir "%BUILD_DIR%\*.profraw"
+
+      # ============================================================
+      # MERGE PGO PROFILES
+      #
+      # *.profraw -> default.profdata
+      # ============================================================
+      - name: Merge PGO profiles
+        shell: cmd
+        working-directory: ${{ env.BUILD_DIR }}
         run: |
-          cd build
-          Get-Item Bin\Release\SvtAv1EncApp.exe | Select-Object FullName, Length
+          echo Merging LLVM PGO profiles...
 
-      - name: Upload Windows binary
+          llvm-profdata merge --sparse=true ^
+            *.profraw ^
+            -o default.profdata
+
+          if errorlevel 1 (
+            echo ERROR: llvm-profdata merge failed.
+            exit /b 1
+          )
+
+          if not exist "default.profdata" (
+            echo ERROR: default.profdata was not created.
+            exit /b 1
+          )
+
+          echo.
+          echo Merged profile:
+          dir default.profdata
+
+      # ============================================================
+      # FINAL PGO + LTO CONFIGURATION
+      #
+      # PGO:
+      #   SVT_AV1_PGO=ON
+      #   SVT_INTERNAL_PGO_USE=ON
+      #
+      # LTO:
+      #   SVT_AV1_LTO=ON
+      #
+      # Explicit LLVM LTO:
+      #   -flto
+      #   -fuse-ld=lld
+      #
+      # This is the ONLY PGO USE build.
+      # ============================================================
+      - name: Configure final PGO plus LTO build
+        shell: cmd
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          cmake ^
+            -S "%SOURCE_DIR%" ^
+            -B "%BUILD_DIR%" ^
+            -G "Ninja" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DBUILD_TESTING=OFF ^
+            -DBUILD_APPS=ON ^
+            -DSVT_AV1_PGO=ON ^
+            -DSVT_AV1_LTO=ON ^
+            -DSVT_INTERNAL_PGO_GENERATE=OFF ^
+            -DSVT_INTERNAL_PGO_USE=ON ^
+            -DSVT_AV1_PGO_DIR="%BUILD_DIR%" ^
+            -DCMAKE_C_COMPILER=clang ^
+            -DCMAKE_CXX_COMPILER=clang++ ^
+            -DCMAKE_C_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" ^
+            -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -flto -fuse-ld=lld" ^
+            -DCMAKE_EXE_LINKER_FLAGS="-flto -fuse-ld=lld" ^
+            -DCMAKE_SHARED_LINKER_FLAGS="-flto -fuse-ld=lld" ^
+            -DCMAKE_MODULE_LINKER_FLAGS="-flto -fuse-ld=lld"
+
+          if errorlevel 1 exit /b 1
+
+      # ============================================================
+      # FINAL BUILD
+      #
+      # PGO ON
+      # LTO ON
+      # ============================================================
+      - name: Build final PGO plus LTO encoder
+        shell: cmd
+        run: |
+          cmake --build "%BUILD_DIR%" ^
+            --config Release ^
+            --target SvtAv1EncApp ^
+            --parallel
+
+          if errorlevel 1 (
+            echo ERROR: Final PGO + LTO build failed.
+            exit /b 1
+          )
+
+          if not exist "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" (
+            echo ERROR: Final SvtAv1EncApp.exe was not found.
+            echo.
+            echo Expected:
+            echo %SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe
+            echo.
+            echo Searching source tree...
+            where /r "%SOURCE_DIR%" SvtAv1EncApp.exe
+            exit /b 1
+          )
+
+          echo.
+          echo ==========================================
+          echo FINAL PGO + LTO BUILD SUCCESS
+          echo ==========================================
+          dir "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe"
+
+      # ============================================================
+      # TEST FINAL EXECUTABLE
+      # ============================================================
+      - name: Test final encoder
+        shell: cmd
+        run: |
+          "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" --help > "%TEMP%\svt-help.txt"
+
+          if errorlevel 1 (
+            echo ERROR: SvtAv1EncApp.exe failed to execute.
+            type "%TEMP%\svt-help.txt"
+            exit /b 1
+          )
+
+          type "%TEMP%\svt-help.txt"
+
+      # ============================================================
+      # SHOW FINAL RESULTS
+      # ============================================================
+      - name: Show build results
+        shell: cmd
+        run: |
+          echo.
+          echo ==========================================
+          echo SOURCE TREE - FINAL EXECUTABLE
+          echo ==========================================
+          dir "%SOURCE_DIR%\Bin\Release"
+
+          echo.
+          echo ==========================================
+          echo EXTERNAL BUILD TREE - PGO DATA
+          echo ==========================================
+          dir "%BUILD_DIR%"
+
+      # ============================================================
+      # UPLOAD FINAL EXECUTABLE
+      # ============================================================
+      - name: Upload SvtAv1EncApp.exe
         uses: actions/upload-artifact@v4
         with:
-          name: svt-av1-clang-windows-x86-64-pgo-lto
-          path: build/Bin/Release/SvtAv1EncApp.exe
-          retention-days: 7
-
-      - name: Upload profiling artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: profiling-data-x86-64
-          path: |
-            build/profiling.log
-            build/*.profdata
-          retention-days: 3
+          name: SvtAv1EncApp-Windows-x86-64-v3-PGO-LTO
+          path: ${{ github.workspace }}/Bin/Release/SvtAv1EncApp.exe
+          if-no-files-found: error
+          compression-level: 9
