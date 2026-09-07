@@ -27,36 +27,47 @@ jobs:
         run: choco install ninja -y
 
       - name: Download test Y4M video
+        shell: pwsh
         run: |
-          mkdir -p build\videos
-          cd build\videos
-          Write-Host "Downloading Y4M test video..."
+          New-Item -ItemType Directory -Force -Path "build\videos" | Out-Null
           $url = 'https://media.xiph.org/video/derf/y4m/park_joy_420_720p50.y4m'
-          $output = 'park_joy_420_720p50.y4m'
+          $output = 'build\videos\park_joy_420_720p50.y4m'
           try {
-              (New-Object System.Net.WebClient).DownloadFile($url, $output)
-              Write-Host "Successfully downloaded"
-              Get-Item $output | Select-Object FullName, Length
+              Write-Host "Downloading Y4M test video..."
+              Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+              $file = Get-Item $output -ErrorAction Stop
+              Write-Host "Successfully downloaded: $($file.FullName)"
+              Write-Host "Size: $($file.Length) bytes"
           } catch {
               Write-Host "Download failed, will create synthetic fallback"
+              Write-Host $_.Exception.Message
           }
-          cd ..\..
 
       - name: Create synthetic Y4M if download failed
+        shell: pwsh
         run: |
-          python << 'EOF'
-          import os
-          os.makedirs('build\\videos', exist_ok=True)
-          testfile = 'build\\videos\\park_joy_420_720p50.y4m'
-          if not os.path.exists(testfile):
-              with open(testfile, 'wb') as f:
-                  f.write(b'YUV4MPEG2 W=8 H=8 F=30:1 Ip A0:0\n')
-                  for frame in range(10):
-                      f.write(b'FRAME\n')
-                      f.write(b'\x80' * (8 * 8))
-                      f.write(b'\x80' * (4 * 4))
-                      f.write(b'\x80' * (4 * 4))
-          EOF
+          $testfile = 'build\videos\park_joy_420_720p50.y4m'
+          if (-not (Test-Path $testfile)) {
+              Write-Host "Creating synthetic fallback Y4M..."
+              $header = [System.Text.Encoding]::ASCII.GetBytes("YUV4MPEG2 W=8 H=8 F=30:1 Ip A0:0`n")
+              $frameHeader = [System.Text.Encoding]::ASCII.GetBytes("FRAME`n")
+              $y = [byte[]](0..63 | ForEach-Object { 128 })
+              $u = [byte[]](0..15 | ForEach-Object { 128 })
+              $v = [byte[]](0..15 | ForEach-Object { 128 })
+              $stream = [System.IO.File]::OpenWrite($testfile)
+              try {
+                  $stream.Write($header, 0, $header.Length)
+                  for ($frame = 0; $frame -lt 10; $frame++) {
+                      $stream.Write($frameHeader, 0, $frameHeader.Length)
+                      $stream.Write($y, 0, $y.Length)
+                      $stream.Write($u, 0, $u.Length)
+                      $stream.Write($v, 0, $v.Length)
+                  }
+              } finally { $stream.Dispose() }
+              Write-Host "Synthetic fallback created."
+          } else {
+              Write-Host "Downloaded video exists; skipping fallback."
+          }
 
       - name: Configure CMake - PGO Generate Phase (no LTO)
         run: |
