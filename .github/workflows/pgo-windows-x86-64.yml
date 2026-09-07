@@ -2,12 +2,6 @@ name: PGO Build with Clang (Windows x86-64)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
 
 permissions:
   contents: read
