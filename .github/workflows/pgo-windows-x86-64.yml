@@ -35,7 +35,7 @@ jobs:
       # CLANG
       # ============================================================
       - name: Setup Clang
-        uses: egor-tensin/setup-clang@v1
+        uses: egor-tensin/setup-clang@v2
         with:
           version: latest
           platform: x64
@@ -198,16 +198,9 @@ jobs:
           "%SOURCE_DIR%\Bin\Release\SvtAv1EncApp.exe" ^
             -i "%PGO_VIDEO_DIR%\park_joy_420_720p50.y4m" ^
             --preset 2 ^
-            --width 1280 ^
-            --height 720 ^
-            --fps-num 50 ^
-            --fps-denom 1 ^
-            --input-depth 8 ^
-            --color-format 1 ^
             --tune 5 ^
-            -b 8 ^
             --enable-tf 2 ^
-            -o NUL
+            --output NUL
 
           if errorlevel 1 (
             echo ERROR: PGO training failed.
