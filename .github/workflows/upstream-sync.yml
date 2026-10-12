@@ -33,7 +33,7 @@ jobs:
 
       - name: Create update pull request
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN_PAT }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if gh pr list --head upstream-sync --base "$DEFAULT_BRANCH" --state open --json number --jq 'length' | grep -q '^0$'; then
@@ -45,4 +45,3 @@ jobs:
           else
             echo "An upstream update pull request is already open."
           fi
-  
