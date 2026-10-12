@@ -115,7 +115,7 @@ static AOM_FORCE_INLINE uint16x8_t quantize_fp_logscale2_8(const TranLow* coeff_
     const int16x8_t  v_coeff_sign = vshrq_n_s16(v_coeff, 15);
     const int16x8_t  v_abs_coeff  = vabsq_s16(v_coeff);
     const uint16x8_t v_mask       = vcgeq_u16(vshlq_n_u16(vreinterpretq_u16_s16(v_abs_coeff), 1),
-                                        vshrq_n_u16(vreinterpretq_u16_s16(v_dequant), 2));
+                                              vshrq_n_u16(vreinterpretq_u16_s16(v_dequant), 2));
     // abs_coeff = vmask ? (int64_t)abs_coeff + log_scaled_round : 0
     const int16x8_t v_tmp = vandq_s16(vqaddq_s16(v_abs_coeff, v_round), vreinterpretq_s16_u16(v_mask));
     // tmp32 = (int)((abs_coeff * quant_ptr[rc != 0]) >> (16 - log_scale));
@@ -339,27 +339,27 @@ static AOM_FORCE_INLINE void quantize_fp_qm_neon_impl(const TranLow* coeff_ptr, 
         const int32x4_t  v_iqm_hi = vreinterpretq_s32_u32(vmovl_high_u16(v_iqm));
 
         const uint32x4_t nz_lo     = quantize_fp_qm_4(vld1q_s32(coeff_ptr + i),
-                                                  v_qm_lo,
-                                                  v_iqm_lo,
-                                                  v_round_lo,
-                                                  v_qscale_lo,
-                                                  v_dequant_lo,
-                                                  v_thr_lo,
-                                                  qcoeff_ptr + i,
-                                                  dqcoeff_ptr + i,
-                                                  log_scale,
-                                                  highbd);
+                                                      v_qm_lo,
+                                                      v_iqm_lo,
+                                                      v_round_lo,
+                                                      v_qscale_lo,
+                                                      v_dequant_lo,
+                                                      v_thr_lo,
+                                                      qcoeff_ptr + i,
+                                                      dqcoeff_ptr + i,
+                                                      log_scale,
+                                                      highbd);
         const uint32x4_t nz_hi     = quantize_fp_qm_4(vld1q_s32(coeff_ptr + i + 4),
-                                                  v_qm_hi,
-                                                  v_iqm_hi,
-                                                  v_round_ac,
-                                                  v_qscale_ac,
-                                                  v_dequant_ac,
-                                                  v_thr_ac,
-                                                  qcoeff_ptr + i + 4,
-                                                  dqcoeff_ptr + i + 4,
-                                                  log_scale,
-                                                  highbd);
+                                                      v_qm_hi,
+                                                      v_iqm_hi,
+                                                      v_round_ac,
+                                                      v_qscale_ac,
+                                                      v_dequant_ac,
+                                                      v_thr_ac,
+                                                      qcoeff_ptr + i + 4,
+                                                      dqcoeff_ptr + i + 4,
+                                                      log_scale,
+                                                      highbd);
         const uint16x8_t v_nz_mask = vcombine_u16(vmovn_u32(nz_lo), vmovn_u32(nz_hi));
         v_eobmax                   = get_max_lane_eob(iscan + i, v_eobmax, v_nz_mask);
 
@@ -531,29 +531,29 @@ static AOM_FORCE_INLINE void quantize_b_qm_neon_impl(const TranLow* coeff_ptr, i
         const int32x4_t  v_iqm_hi = vreinterpretq_s32_u32(vmovl_high_u16(v_iqm));
 
         const uint32x4_t nz_lo     = quantize_b_qm_4(vld1q_s32(coeff_ptr + i),
-                                                 v_qm_lo,
-                                                 v_iqm_lo,
-                                                 v_round_lo,
-                                                 v_quant_scl_lo,
-                                                 v_qshift_scl_lo,
-                                                 v_dequant_lo,
-                                                 v_zbin_thr_lo,
-                                                 qcoeff_ptr + i,
-                                                 dqcoeff_ptr + i,
-                                                 log_scale,
-                                                 highbd);
+                                                     v_qm_lo,
+                                                     v_iqm_lo,
+                                                     v_round_lo,
+                                                     v_quant_scl_lo,
+                                                     v_qshift_scl_lo,
+                                                     v_dequant_lo,
+                                                     v_zbin_thr_lo,
+                                                     qcoeff_ptr + i,
+                                                     dqcoeff_ptr + i,
+                                                     log_scale,
+                                                     highbd);
         const uint32x4_t nz_hi     = quantize_b_qm_4(vld1q_s32(coeff_ptr + i + 4),
-                                                 v_qm_hi,
-                                                 v_iqm_hi,
-                                                 v_round_ac,
-                                                 v_quant_scl_ac,
-                                                 v_qshift_scl_ac,
-                                                 v_dequant_ac,
-                                                 v_zbin_thr_ac,
-                                                 qcoeff_ptr + i + 4,
-                                                 dqcoeff_ptr + i + 4,
-                                                 log_scale,
-                                                 highbd);
+                                                     v_qm_hi,
+                                                     v_iqm_hi,
+                                                     v_round_ac,
+                                                     v_quant_scl_ac,
+                                                     v_qshift_scl_ac,
+                                                     v_dequant_ac,
+                                                     v_zbin_thr_ac,
+                                                     qcoeff_ptr + i + 4,
+                                                     dqcoeff_ptr + i + 4,
+                                                     log_scale,
+                                                     highbd);
         const uint16x8_t v_nz_mask = vcombine_u16(vmovn_u32(nz_lo), vmovn_u32(nz_hi));
         v_eobmax                   = get_max_lane_eob(iscan + i, v_eobmax, v_nz_mask);
 
@@ -735,10 +735,10 @@ static inline void aom_quantize_b_helper_32x32_neon(const TranLow* coeff_ptr, in
 
     int16x8_t v_eobmax_76543210 = vdupq_n_s16(-1);
 
-    int16x8_t v_zbins       = vdupq_n_s16(zbins[1]);
-    int16x8_t v_round       = vdupq_n_s16(rounds[1]);
-    int16x8_t v_dequant     = vdupq_n_s16(dequant_ptr[1]);
-    int16x8_t v_quant       = vdupq_n_s16(quant_ptr[1]);
+    int16x8_t v_zbins   = vdupq_n_s16(zbins[1]);
+    int16x8_t v_round   = vdupq_n_s16(rounds[1]);
+    int16x8_t v_dequant = vdupq_n_s16(dequant_ptr[1]);
+    int16x8_t v_quant   = vdupq_n_s16(quant_ptr[1]);
 
     // The shift path is valid only because quant_shift is a power of two.
     assert(quant_shift_ptr[0] == (1 << svt_ctz((unsigned)quant_shift_ptr[0])));
@@ -826,10 +826,10 @@ static inline void aom_quantize_b_helper_64x64_neon(const TranLow* coeff_ptr, in
 
     int16x8_t v_eobmax_76543210 = vdupq_n_s16(-1);
 
-    int16x8_t v_zbins       = vdupq_n_s16(zbins[1]);
-    int16x8_t v_round       = vdupq_n_s16(rounds[1]);
-    int16x8_t v_dequant     = vdupq_n_s16(dequant_ptr[1]);
-    int16x8_t v_quant       = vdupq_n_s16(quant_ptr[1]);
+    int16x8_t v_zbins   = vdupq_n_s16(zbins[1]);
+    int16x8_t v_round   = vdupq_n_s16(rounds[1]);
+    int16x8_t v_dequant = vdupq_n_s16(dequant_ptr[1]);
+    int16x8_t v_quant   = vdupq_n_s16(quant_ptr[1]);
 
     // The shift path is valid only because quant_shift is a power of two.
     assert(quant_shift_ptr[0] == (1 << svt_ctz((unsigned)quant_shift_ptr[0])));
@@ -939,83 +939,70 @@ void svt_aom_quantize_b_neon(const TranLow* coeff_ptr, intptr_t n_coeffs, const 
     }
 }
 
-uint8_t svt_av1_compute_cul_level_neon(const int16_t* const scan, const int32_t* const quant_coeff, uint16_t* eob) {
-    if (*eob == 1) {
-        if (quant_coeff[0] > 0) {
-            return AOMMIN(COEFF_CONTEXT_MASK, quant_coeff[0]) | (2 << COEFF_CONTEXT_BITS);
-        }
-        if (quant_coeff[0] < 0) {
-            return AOMMIN(COEFF_CONTEXT_MASK, -quant_coeff[0]) | (1 << COEFF_CONTEXT_BITS);
-        }
-        return 0;
-    }
-    if (*eob == 0) {
-        return 0;
-    }
-
+int32_t svt_av1_compute_cul_level_neon(const int16_t* const scan, const int32_t* const quant_coeff, int32_t eob,
+                                       int32_t n_coeffs) {
     int32x4_t sum_s32[2] = {vdupq_n_s32(0), vdupq_n_s32(0)};
-    int32x4_t zeros      = vdupq_n_s32(0);
 
-    uint16_t       sz       = *eob;
-    const int16_t* scan_ptr = scan;
-    while (sz >= 8) {
-        const int32_t quant_coeff0 = quant_coeff[scan_ptr[0]];
-        const int32_t quant_coeff1 = quant_coeff[scan_ptr[1]];
-        const int32_t quant_coeff2 = quant_coeff[scan_ptr[2]];
-        const int32_t quant_coeff3 = quant_coeff[scan_ptr[3]];
-        const int32_t quant_coeff4 = quant_coeff[scan_ptr[4]];
-        const int32_t quant_coeff5 = quant_coeff[scan_ptr[5]];
-        const int32_t quant_coeff6 = quant_coeff[scan_ptr[6]];
-        const int32_t quant_coeff7 = quant_coeff[scan_ptr[7]];
+    if (eob * 12 < n_coeffs) {
+        // Sparse: scan-based gather, bounded by eob.
+        int32x4_t      zeros    = vdupq_n_s32(0);
+        int32_t        sz       = eob;
+        const int16_t* scan_ptr = scan;
+        while (sz >= 8) {
+            const int32_t quant_coeff0 = quant_coeff[scan_ptr[0]];
+            const int32_t quant_coeff1 = quant_coeff[scan_ptr[1]];
+            const int32_t quant_coeff2 = quant_coeff[scan_ptr[2]];
+            const int32_t quant_coeff3 = quant_coeff[scan_ptr[3]];
+            const int32_t quant_coeff4 = quant_coeff[scan_ptr[4]];
+            const int32_t quant_coeff5 = quant_coeff[scan_ptr[5]];
+            const int32_t quant_coeff6 = quant_coeff[scan_ptr[6]];
+            const int32_t quant_coeff7 = quant_coeff[scan_ptr[7]];
 
-        int32x4_t quant_coeff_0123 = vcombine_s32(
-            vcreate_s32((((uint64_t)quant_coeff1) << 32) | (uint32_t)quant_coeff0),
-            vcreate_s32((((uint64_t)quant_coeff3) << 32) | (uint32_t)quant_coeff2));
+            int32x4_t quant_coeff_0123 = vcombine_s32(
+                vcreate_s32((((uint64_t)quant_coeff1) << 32) | (uint32_t)quant_coeff0),
+                vcreate_s32((((uint64_t)quant_coeff3) << 32) | (uint32_t)quant_coeff2));
 
-        int32x4_t quant_coeff_4567 = vcombine_s32(
-            vcreate_s32((((uint64_t)quant_coeff5) << 32) | (uint32_t)quant_coeff4),
-            vcreate_s32((((uint64_t)quant_coeff7) << 32) | (uint32_t)quant_coeff6));
+            int32x4_t quant_coeff_4567 = vcombine_s32(
+                vcreate_s32((((uint64_t)quant_coeff5) << 32) | (uint32_t)quant_coeff4),
+                vcreate_s32((((uint64_t)quant_coeff7) << 32) | (uint32_t)quant_coeff6));
 
-        sum_s32[0] = vabaq_s32(sum_s32[0], quant_coeff_0123, zeros);
-        sum_s32[1] = vabaq_s32(sum_s32[1], quant_coeff_4567, zeros);
+            sum_s32[0] = vabaq_s32(sum_s32[0], quant_coeff_0123, zeros);
+            sum_s32[1] = vabaq_s32(sum_s32[1], quant_coeff_4567, zeros);
 
-        scan_ptr += 8;
-        sz -= 8;
+            scan_ptr += 8;
+            sz -= 8;
+        }
+
+        if (sz >= 4) {
+            const int32_t quant_coeff0 = quant_coeff[scan_ptr[0]];
+            const int32_t quant_coeff1 = quant_coeff[scan_ptr[1]];
+            const int32_t quant_coeff2 = quant_coeff[scan_ptr[2]];
+            const int32_t quant_coeff3 = quant_coeff[scan_ptr[3]];
+
+            int32x4_t quant_coeff_0123 = vcombine_s32(
+                vcreate_s32((((uint64_t)quant_coeff1) << 32) | (uint32_t)quant_coeff0),
+                vcreate_s32((((uint64_t)quant_coeff3) << 32) | (uint32_t)quant_coeff2));
+
+            sum_s32[0] = vabaq_s32(sum_s32[0], quant_coeff_0123, zeros);
+
+            scan_ptr += 4;
+            sz -= 4;
+        }
+
+        int sum = 0;
+        while (sz) {
+            sum += abs(quant_coeff[*scan_ptr]);
+            scan_ptr++;
+            sz--;
+        }
+        return sum + vaddvq_s32(vaddq_s32(sum_s32[0], sum_s32[1]));
     }
 
-    if (sz >= 4) {
-        const int32_t quant_coeff0 = quant_coeff[scan_ptr[0]];
-        const int32_t quant_coeff1 = quant_coeff[scan_ptr[1]];
-        const int32_t quant_coeff2 = quant_coeff[scan_ptr[2]];
-        const int32_t quant_coeff3 = quant_coeff[scan_ptr[3]];
-
-        int32x4_t quant_coeff_0123 = vcombine_s32(
-            vcreate_s32((((uint64_t)quant_coeff1) << 32) | (uint32_t)quant_coeff0),
-            vcreate_s32((((uint64_t)quant_coeff3) << 32) | (uint32_t)quant_coeff2));
-
-        sum_s32[0] = vabaq_s32(sum_s32[0], quant_coeff_0123, zeros);
-
-        scan_ptr += 4;
-        sz -= 4;
+    // Dense: gather-free linear over the whole block. n_coeffs is always a multiple of 16.
+    assert(n_coeffs % 8 == 0);
+    for (int32_t i = 0; i < n_coeffs; i += 8) {
+        sum_s32[0] = vaddq_s32(sum_s32[0], vabsq_s32(vld1q_s32(quant_coeff + i)));
+        sum_s32[1] = vaddq_s32(sum_s32[1], vabsq_s32(vld1q_s32(quant_coeff + i + 4)));
     }
-
-    int sum = 0;
-    while (sz) {
-        sum += abs(quant_coeff[*scan_ptr]);
-        scan_ptr++;
-        sz--;
-    }
-
-    int32x4_t partial_sums = vaddq_s32(sum_s32[0], sum_s32[1]);
-
-    const int32_t cul_level = AOMMIN(COEFF_CONTEXT_MASK, sum + vaddvq_s32(partial_sums));
-
-    // DC value, calculation from set_dc_sign()
-    if (quant_coeff[0] < 0) {
-        return (cul_level | (1 << COEFF_CONTEXT_BITS));
-    }
-    if (quant_coeff[0] > 0) {
-        return (cul_level + (2 << COEFF_CONTEXT_BITS));
-    }
-    return (uint8_t)cul_level;
+    return vaddvq_s32(vaddq_s32(sum_s32[0], sum_s32[1]));
 }

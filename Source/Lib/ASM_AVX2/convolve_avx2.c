@@ -1270,7 +1270,7 @@ void svt_av1_build_compound_diffwtd_mask_highbd_avx2(uint8_t* mask, DIFFWTD_MASK
                         __m256i s1   = _mm256_loadu_si256((const __m256i*)&ssrc1[j]);
                         __m256i diff = _mm256_srai_epi16(_mm256_abs_epi16(_mm256_sub_epi16(s0, s1)), DIFF_FACTOR_LOG2);
                         __m256i m    = _mm256_min_epi16(_mm256_max_epi16(y0, _mm256_add_epi16(diff, ymask_base)),
-                                                     y_aom_blend_a64_max_alpha);
+                                                        y_aom_blend_a64_max_alpha);
                         m            = _mm256_sub_epi16(y_aom_blend_a64_max_alpha, m);
                         m            = _mm256_packus_epi16(m, m);
                         m            = _mm256_permute4x64_epi64(m, _MM_SHUFFLE(0, 0, 2, 0));
@@ -1288,7 +1288,7 @@ void svt_av1_build_compound_diffwtd_mask_highbd_avx2(uint8_t* mask, DIFFWTD_MASK
                         __m256i s1   = _mm256_loadu_si256((const __m256i*)&ssrc1[j]);
                         __m256i diff = _mm256_srai_epi16(_mm256_abs_epi16(_mm256_sub_epi16(s0, s1)), DIFF_FACTOR_LOG2);
                         __m256i m    = _mm256_min_epi16(_mm256_max_epi16(y0, _mm256_add_epi16(diff, ymask_base)),
-                                                     y_aom_blend_a64_max_alpha);
+                                                        y_aom_blend_a64_max_alpha);
                         m            = _mm256_packus_epi16(m, m);
                         m            = _mm256_permute4x64_epi64(m, _MM_SHUFFLE(0, 0, 2, 0));
                         __m128i m0   = _mm256_castsi256_si128(m);
@@ -1308,7 +1308,7 @@ void svt_av1_build_compound_diffwtd_mask_highbd_avx2(uint8_t* mask, DIFFWTD_MASK
                         __m256i s1   = _mm256_loadu_si256((const __m256i*)&ssrc1[j]);
                         __m256i diff = _mm256_sra_epi16(_mm256_abs_epi16(_mm256_sub_epi16(s0, s1)), xshift);
                         __m256i m    = _mm256_min_epi16(_mm256_max_epi16(y0, _mm256_add_epi16(diff, ymask_base)),
-                                                     y_aom_blend_a64_max_alpha);
+                                                        y_aom_blend_a64_max_alpha);
                         m            = _mm256_sub_epi16(y_aom_blend_a64_max_alpha, m);
                         m            = _mm256_packus_epi16(m, m);
                         m            = _mm256_permute4x64_epi64(m, _MM_SHUFFLE(0, 0, 2, 0));
@@ -1326,7 +1326,7 @@ void svt_av1_build_compound_diffwtd_mask_highbd_avx2(uint8_t* mask, DIFFWTD_MASK
                         __m256i s1   = _mm256_loadu_si256((const __m256i*)&ssrc1[j]);
                         __m256i diff = _mm256_sra_epi16(_mm256_abs_epi16(_mm256_sub_epi16(s0, s1)), xshift);
                         __m256i m    = _mm256_min_epi16(_mm256_max_epi16(y0, _mm256_add_epi16(diff, ymask_base)),
-                                                     y_aom_blend_a64_max_alpha);
+                                                        y_aom_blend_a64_max_alpha);
                         m            = _mm256_packus_epi16(m, m);
                         m            = _mm256_permute4x64_epi64(m, _MM_SHUFFLE(0, 0, 2, 0));
                         __m128i m0   = _mm256_castsi256_si128(m);
@@ -1978,45 +1978,30 @@ static INLINE int32_t sum_to_int32(__m256i sum_256) {
     return _mm_cvtsi128_si32(sum_128);
 }
 
-uint8_t svt_av1_compute_cul_level_avx2(const int16_t* const scan, const int32_t* const quant_coeff, uint16_t* eob) {
-    if (*eob == 1) {
-        if (quant_coeff[0] > 0) {
-            return (AOMMIN(COEFF_CONTEXT_MASK, quant_coeff[0]) + (2 << COEFF_CONTEXT_BITS));
+int32_t svt_av1_compute_cul_level_avx2(const int16_t* const scan, const int32_t* const quant_coeff, int32_t eob,
+                                       int32_t n_coeffs) {
+    // Raw sum of |quant_coeff| over the coded coeffs; the caller applies the clamp + DC sign.
+    if (eob * 12 < n_coeffs) {
+        // Sparse: gather only the eob coded coeffs (scan positions >= eob are zero; round eob up to
+        // a multiple of 8, still <= n_coeffs). eob-bounded, so cheap for tiny eob in large blocks.
+        __m256i       sum    = _mm256_setzero_si256();
+        const int32_t eob_up = (eob + 7) & ~7;
+        for (int32_t c = 0; c < eob_up; c += 8) {
+            const __m128i s16 = _mm_loadu_si128((const __m128i*)(scan + c));
+            const __m256i s32 = _mm256_cvtepi16_epi32(s16);
+            __m256i       v   = _mm256_i32gather_epi32(quant_coeff, s32, 4);
+            v                 = _mm256_abs_epi32(v);
+            sum               = _mm256_add_epi32(sum, v);
         }
-        if (quant_coeff[0] < 0) {
-            return (AOMMIN(COEFF_CONTEXT_MASK, ABS(quant_coeff[0])) | (1 << COEFF_CONTEXT_BITS));
-        }
-        return 0;
+        return sum_to_int32(sum);
     }
-    __m128i scan_128;
-    __m256i scan_256;
-    __m256i quant_coeff_256;
-    __m256i sum_256 = _mm256_setzero_si256();
-
-    for (int32_t c = 0; c <= *eob - 8; c += 8) {
-        scan_128        = _mm_loadu_si128((const __m128i*)(scan + c));
-        scan_256        = _mm256_cvtepi16_epi32(scan_128);
-        quant_coeff_256 = _mm256_i32gather_epi32(quant_coeff, scan_256, 4);
-        quant_coeff_256 = _mm256_abs_epi32(quant_coeff_256);
-        sum_256         = _mm256_add_epi32(sum_256, quant_coeff_256);
+    // Dense: gather-free linear over the whole block. Two accumulators for ILP.
+    assert(n_coeffs % 16 == 0);
+    __m256i sum0 = _mm256_setzero_si256();
+    __m256i sum1 = _mm256_setzero_si256();
+    for (int32_t i = 0; i < n_coeffs; i += 16) {
+        sum0 = _mm256_add_epi32(sum0, _mm256_abs_epi32(_mm256_loadu_si256((const __m256i*)(quant_coeff + i))));
+        sum1 = _mm256_add_epi32(sum1, _mm256_abs_epi32(_mm256_loadu_si256((const __m256i*)(quant_coeff + i + 8))));
     }
-
-    int sum = 0;
-    if (*eob % 8) {
-        int eob_round = *eob & ~7;
-        for (int32_t c = 0; c < *eob % 8; c++) {
-            sum += abs(quant_coeff[scan[eob_round + c]]);
-        }
-    }
-
-    int32_t cul_level = sum_to_int32(sum_256) + sum;
-    cul_level         = AOMMIN(COEFF_CONTEXT_MASK, cul_level);
-    // DC value, calculation from set_dc_sign()
-    if (quant_coeff[0] < 0) {
-        return (cul_level | (1 << COEFF_CONTEXT_BITS));
-    }
-    if (quant_coeff[0] > 0) {
-        return (cul_level + (2 << COEFF_CONTEXT_BITS));
-    }
-    return (uint8_t)cul_level;
+    return sum_to_int32(_mm256_add_epi32(sum0, sum1));
 }

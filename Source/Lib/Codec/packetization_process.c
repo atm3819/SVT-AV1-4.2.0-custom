@@ -273,7 +273,7 @@ static void collect_frames_info(PacketizationContext* context_ptr, const EncodeC
     for (int i = 0; i < frames; i++) {
         PacketizationReorderEntry* queue_entry_ptr   = get_reorder_queue_entry(enc_ctx, i);
         EbBufferHeaderType*        output_stream_ptr = (EbBufferHeaderType*)
-                                                    queue_entry_ptr->output_stream_wrapper_ptr->object_ptr;
+                                                           queue_entry_ptr->output_stream_wrapper_ptr->object_ptr;
 #if DETAILED_FRAME_OUTPUT
         print_detailed_frame_info(context_ptr, queue_entry_ptr);
 #else
@@ -470,8 +470,8 @@ EbErrorType svt_aom_packetization_kernel_iter(void* context) {
     // Get EntropyCoding Results
     EB_GET_FULL_OBJECT(context_ptr->entropy_coding_input_fifo_ptr, &entropy_coding_results_wrapper_ptr);
 
-    EntropyCodingResults* entropy_coding_results_ptr = (EntropyCodingResults*)
-                                                           entropy_coding_results_wrapper_ptr->object_ptr;
+    EntropyCodingResults*    entropy_coding_results_ptr = (EntropyCodingResults*)
+                                                              entropy_coding_results_wrapper_ptr->object_ptr;
     PictureControlSet*       pcs      = (PictureControlSet*)entropy_coding_results_ptr->pcs_wrapper->object_ptr;
     SequenceControlSet*      scs      = pcs->scs;
     EncodeContext*           enc_ctx  = scs->enc_ctx;
@@ -771,10 +771,10 @@ EbErrorType svt_aom_packetization_kernel_iter(void* context) {
 
         PictureDemuxResults* picture_manager_results_ptr = (PictureDemuxResults*)
                                                                picture_manager_results_wrapper_ptr->object_ptr;
-        picture_manager_results_ptr->picture_number = pcs->picture_number;
-        picture_manager_results_ptr->picture_type   = EB_PIC_FEEDBACK;
-        picture_manager_results_ptr->decode_order   = pcs->ppcs->decode_order;
-        picture_manager_results_ptr->scs            = pcs->scs;
+        picture_manager_results_ptr->picture_number      = pcs->picture_number;
+        picture_manager_results_ptr->picture_type        = EB_PIC_FEEDBACK;
+        picture_manager_results_ptr->decode_order        = pcs->ppcs->decode_order;
+        picture_manager_results_ptr->scs                 = pcs->scs;
     }
     // Reset the Bitstream before writing to it
     svt_aom_bitstream_reset(pcs->bitstream_ptr);
@@ -860,13 +860,13 @@ EbErrorType svt_aom_packetization_kernel_iter(void* context) {
     queue_entry_ptr->total_num_bits = pcs->ppcs->total_num_bits;
     queue_entry_ptr->frame_type     = frm_hdr->frame_type;
     queue_entry_ptr->poc            = pcs->picture_number;
-    svt_memcpy(&queue_entry_ptr->av1_ref_signal, &pcs->ppcs->av1_ref_signal, sizeof(Av1RpsNode));
+    memcpy(&queue_entry_ptr->av1_ref_signal, &pcs->ppcs->av1_ref_signal, sizeof(Av1RpsNode));
 
     queue_entry_ptr->slice_type = pcs->slice_type;
 #if DETAILED_FRAME_OUTPUT
     queue_entry_ptr->ref_poc_list0 = pcs->ppcs->ref_pic_poc_array[REF_LIST_0][0];
     queue_entry_ptr->ref_poc_list1 = pcs->ppcs->ref_pic_poc_array[REF_LIST_1][0];
-    svt_memcpy(queue_entry_ptr->ref_poc_array, pcs->ppcs->av1_ref_signal.ref_poc_array, 7 * sizeof(uint64_t));
+    memcpy(queue_entry_ptr->ref_poc_array, pcs->ppcs->av1_ref_signal.ref_poc_array, 7 * sizeof(uint64_t));
 #endif
     queue_entry_ptr->show_frame          = frm_hdr->show_frame;
     queue_entry_ptr->has_show_existing   = pcs->ppcs->has_show_existing;

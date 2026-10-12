@@ -329,12 +329,13 @@ typedef struct EbSvtAv1EncConfiguration {
      * Default is MAIN_PROFILE.
      */
     EbAv1SeqProfile profile;
-    /* Constraints for bitstream in terms of max bitrate and max buffer size.
+    /**
+     * @brief Bitstream tier.
+     * 0: Main tier, for most applications.
+     * 1: High tier, for demanding applications.
      *
-     * 0 = Main, for most applications.
-     * 1 = High, for demanding applications.
-     *
-     * Default is 0. */
+     * Default is Main tier (0).
+     */
     uint32_t tier;
     /**
      * @brief Bitstream level.
@@ -1025,21 +1026,55 @@ typedef struct EbSvtAv1EncConfiguration {
      * 1..4       : enable the STORE / CLEAR / USE event API. The
      *              ref-buffer pool grows by this many entries (one full
      *              picture buffer each) to hold the locked anchors.
-     *              The encoder still uses all 8 DPB slots dynamically;
-     *              STORE locks one slot at a time, and CLEAR releases.
+     *              The DPB is split: the encoder's own references use
+     *              slots {0..3} and anchors use {4..7}, so at most 4 can
+     *              be held at once. STORE locks one, CLEAR releases it.
      *
      * Validation (svt_av1_verify_settings):
      *   - max_managed_refs <= 4
      *   - if > 0: pred_structure must be LOW_DELAY.
+     *   - if > 0: rate_control_mode must be CBR.
+     *   - if > 0: switch frames must be off (sframe_dist == 0 and no
+     *     sframe_posi). An S-frame refreshes all 8 DPB slots, evicting
+     *     every anchor on the decoder side.
      *
-     * ABI note: this field was added in place of one padding byte. The
-     * library expects EbSvtAv1EncConfiguration to be zero-initialized
-     * before configuration (which svt_av1_enc_init_handle guarantees);
-     * applications building this struct manually with uninitialized
-     * memory could silently inherit a non-zero value here from prior
-     * stack contents and unexpectedly enable the feature.
+     * Additionally rejected in svt_av1_enc_set_parameter once the preset's
+     * reference counts are known: the split requires all counts <= 2, so a
+     * multi-reference preset is refused rather than silently retuned. Use
+     * enc_mode >= 9 with rtc=1, or enc_mode >= 10 without.
      */
     uint8_t max_managed_refs;
+
+    /**
+     * @brief Highest hierarchical_levels this session may reach at runtime.
+     *
+     * Buffer pools are sized once at init from hierarchical_levels. A session
+     * that raises its mini-GOP size later via MG_SIZE_CHANGE_EVENT must declare
+     * the ceiling here, or the pools sized for the initial value run dry.
+     *
+     * 0 (default): hierarchical_levels is fixed for the session; pool sizing
+     *              and reference selection are preserved BIT-EXACTLY and no
+     *              extra memory is allocated.
+     * 1..2       : size pools for this many levels instead of the configured
+     *              hierarchical_levels.
+     *
+     * Validation (svt_av1_verify_settings):
+     *   - max_hierarchical_levels <= 2
+     *   - if > 0: rtc, pred_structure == LOW_DELAY and rate_control_mode ==
+     *     CBR, matching where MG_SIZE_CHANGE_EVENT is accepted.
+     *   - if > 0: must be >= hierarchical_levels.
+     */
+    uint8_t max_hierarchical_levels;
+
+    /**
+     * @brief Maximum number of consecutive input frames RTC CBR may skip.
+     *
+     * 0 (default): disabled.
+     * Nonzero values require RTC low-delay CBR. A skipped input makes
+     * svt_av1_enc_send_picture() return EB_NoErrorFrameSkipped and produces no
+     * output packet.
+     */
+    uint8_t max_allowed_consecutive_frames_skips;
 
     // clang-format off
     /* Add 128 Byte Padding to Struct to avoid changing the size of the public configuration struct */
@@ -1050,6 +1085,8 @@ typedef struct EbSvtAv1EncConfiguration {
         - sizeof(uint32_t) * 2 // max intra/inter bitrates
         - sizeof(bool) // enable_intrabc
         - sizeof(uint8_t) // max_managed_refs (ref-frame mgmt)
+        - sizeof(uint8_t) // max_hierarchical_levels (runtime MG size change)
+        - sizeof(uint8_t) // max_allowed_consecutive_frames_skips
     ];
     // clang-format on
 } EbSvtAv1EncConfiguration;
@@ -1162,7 +1199,10 @@ EB_API EbErrorType svt_av1_enc_stream_header_release(EbBufferHeaderType* stream_
      *
      * Parameter:
      * @ *svt_enc_component  Encoder handler.
-     * @ *p_buffer           Header pointer, picture buffer. */
+     * @ *p_buffer           Header pointer, picture buffer.
+     *
+     * Returns EB_NoErrorFrameSkipped when the input was accepted but no output
+     * packet will be produced. */
 EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType* svt_enc_component, EbBufferHeaderType* p_buffer);
 
 /**

@@ -1096,11 +1096,11 @@ typedef struct ModeDecisionContext {
     // Store intra prediction for inter-intra
     uint8_t** intrapred_buf;
     // Store OBMC pre-computed data
-    uint8_t*       obmc_buff_0;
-    uint8_t*       obmc_buff_1;
-    uint16_t*      obmc_conv_buf;
-    int32_t*       wsrc_buf;
-    int32_t*       mask_buf;
+    uint8_t*  obmc_buff_0;
+    uint8_t*  obmc_buff_1;
+    uint16_t* obmc_conv_buf;
+    int32_t*  wsrc_buf;
+    int32_t*  mask_buf;
     // Hoisted inter-prediction scratch (were large on-stack arrays). Per-thread via ctx.
     uint16_t*      tmp_conv_buf; // conv accumulation buffer (>= 128x128 uint16)
     uint8_t*       seg_mask_buf; // masked-compound segmentation mask (2 * MAX_SB_SQUARE)
@@ -1113,9 +1113,10 @@ typedef struct ModeDecisionContext {
     // Control fast_coeff_est_level per mds
     uint8_t mds_fast_coeff_est_level;
     // Control subres_step per mds
-    uint8_t              mds_subres_step;
-    FilterIntraCtrls     filter_intra_ctrls;
-    uint8_t              md_allow_intrabc;
+    uint8_t          mds_subres_step;
+    FilterIntraCtrls filter_intra_ctrls;
+    uint8_t          md_allow_intrabc;
+    Mv intrabc_last_dv; // Last DV chosen by the IntraBC search in the current segment; seeds the BVP fallback (dominant-offset predictor). 0 = none.
     uint8_t              md_palette_level;
     DepthRemovalCtrls    depth_removal_ctrls;
     DepthRefinementCtrls depth_refinement_ctrls;

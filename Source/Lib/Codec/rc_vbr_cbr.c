@@ -784,7 +784,7 @@ void svt_av1_rc_process_rate_allocation(PictureControlSet* pcs, SequenceControlS
     }
 
     int32_t update_type = ppcs->update_type;
-    if (ppcs->tpl_ctrls.enable && ppcs->r0 != 0 &&
+    if (ppcs->tpl_ctrls.enable && ppcs->r0_gen &&
         (update_type == SVT_AV1_KF_UPDATE || update_type == SVT_AV1_GF_UPDATE || update_type == SVT_AV1_ARF_UPDATE)) {
         process_tpl_stats_frame_kf_gfu_boost(pcs);
     }
@@ -792,14 +792,16 @@ void svt_av1_rc_process_rate_allocation(PictureControlSet* pcs, SequenceControlS
     if (scs->enc_ctx->rc_cfg.mode == AOM_CBR) {
         svt_aom_one_pass_rt_rate_alloc(ppcs);
     } else {
-        svt_block_on_mutex(scs->enc_ctx->stat_file_mutex);
+        // Guard the read in process_first_pass_stats() against the concurrent writers
+        // in firstpass.c
+        svt_block_on_mutex(scs->twopass.stats_buf_ctx->stats_in_write_mutex);
 
         restore_param(ppcs, ppcs->rate_control_param_ptr);
         svt_aom_process_rc_stat(ppcs);
         av1_set_target_rate(pcs);
         store_param(ppcs, ppcs->rate_control_param_ptr);
 
-        svt_release_mutex(scs->enc_ctx->stat_file_mutex);
+        svt_release_mutex(scs->twopass.stats_buf_ctx->stats_in_write_mutex);
     }
 }
 
@@ -1089,7 +1091,7 @@ static int get_active_best_quality(PictureControlSet* pcs, int active_worst_qual
     ASSIGN_MINQ_TABLE(bit_depth, inter_minq);
     int active_best_quality = 0;
     int is_leaf_frame       = !(ppcs->update_type == SVT_AV1_GF_UPDATE || ppcs->update_type == SVT_AV1_ARF_UPDATE ||
-                          is_intrl_arf_boost);
+                                is_intrl_arf_boost);
     int is_overlay_frame    = ppcs->is_overlay;
 
     if (is_leaf_frame || is_overlay_frame) {
@@ -1799,7 +1801,7 @@ void recode_loop_update_q(PictureParentControlSet* ppcs, bool* const loop, int* 
     RATE_CONTROL*       rc            = &enc_ctx->rc;
     RateControlCfg*     rc_cfg        = &enc_ctx->rc_cfg;
     int                 do_dummy_pack = (scs->enc_ctx->recode_loop >= ALLOW_RECODE_KFMAXBW &&
-                         !(rc_cfg->mode == AOM_Q && scs->static_config.max_bit_rate == 0)) ||
+                                         !(rc_cfg->mode == AOM_Q && scs->static_config.max_bit_rate == 0)) ||
         rc_cfg->min_cr > 0;
     if (do_dummy_pack) {
         ppcs->projected_frame_size = (int)((ppcs->pcs_total_rate + (1 << (AV1_PROB_COST_SHIFT - 1))) >>

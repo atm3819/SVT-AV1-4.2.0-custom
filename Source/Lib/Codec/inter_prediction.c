@@ -205,6 +205,7 @@ void svt_av1_setup_scale_factors_for_frame(ScaleFactors* sf, int other_w, int ot
     if (!valid_ref_frame_size(other_w, other_h, this_w, this_h)) {
         sf->x_scale_fp = REF_INVALID_SCALE;
         sf->y_scale_fp = REF_INVALID_SCALE;
+        sf->is_scaled  = 0;
         return;
     }
 
@@ -214,7 +215,8 @@ void svt_av1_setup_scale_factors_for_frame(ScaleFactors* sf, int other_w, int ot
     sf->x_step_q4 = fixed_point_scale_to_coarse_point_scale(sf->x_scale_fp);
     sf->y_step_q4 = fixed_point_scale_to_coarse_point_scale(sf->y_scale_fp);
 
-    if (av1_is_scaled(sf)) {
+    sf->is_scaled = av1_is_scaled(sf);
+    if (sf->is_scaled) {
         sf->scale_value_x = scaled_x;
         sf->scale_value_y = scaled_y;
     } else {
@@ -367,8 +369,8 @@ void svt_av1_convolve_2d_sr_c(const uint8_t* src, int32_t src_stride, uint8_t* d
             }
             assert(0 <= sum && sum < (1 << (offset_bits + 2)));
             int16_t res             = (ConvBufType)(ROUND_POWER_OF_TWO(sum, conv_params->round_1) -
-                                        ((1 << (offset_bits - conv_params->round_1)) +
-                                         (1 << (offset_bits - conv_params->round_1 - 1))));
+                                                    ((1 << (offset_bits - conv_params->round_1)) +
+                                                     (1 << (offset_bits - conv_params->round_1 - 1))));
             dst[y * dst_stride + x] = (uint8_t)clip_pixel_highbd(ROUND_POWER_OF_TWO(res, bits), 8);
         }
     }
