@@ -137,6 +137,7 @@ typedef enum EbErrorType {
     EB_ErrorDestroyMutexFailed     = (int32_t)0x80002032,
     EB_NoErrorEmptyQueue           = (int32_t)0x80002033,
     EB_NoErrorFifoShutdown         = (int32_t)0x80002034,
+    EB_NoErrorFrameSkipped         = (int32_t)0x80002035,
     EB_ErrorMax                    = 0x7FFFFFFF
 } EbErrorType;
 
@@ -307,7 +308,9 @@ typedef struct SvtAv1RateInfo {
 //   - Per-event payload: SvtAv1RefFrameCmd { uint32_t pic_id; }
 //     (one STORE + one CLEAR + one USE max per input; pic_id != 0).
 //   - Required encoder config: pred_structure == LOW_DELAY,
-//     rate_control_mode == CBR, hierarchical_levels in {0,1,2}.
+//     rate_control_mode == CBR, hierarchical_levels in {0,1,2}, and a
+//     preset whose reference counts are all <= 2 (enc_mode >= 9 with
+//     rtc=1, or enc_mode >= 10 without), and switch frames off.
 //   - Events apply only on base-layer (temporal_layer_index == 0) inputs.
 //   - Key frames implicitly release all anchors.
 //   - Pre-condition violations either FAIL-HARD (returns
@@ -317,7 +320,7 @@ typedef struct SvtAv1RateInfo {
 //     ERROR + DROP paths.
 //
 // Full workflow, configuration constraints, error-handling matrix,
-// encoder-side mrp_level override mechanics, and memory-overhead notes:
+// encoder-side DPB slot-split mechanics, and memory-overhead notes:
 // see src/Docs/Appendix-Ref-Frame-Management.md
 
 // Payload for the three ref-frame management events (REF_STORE_EVENT,

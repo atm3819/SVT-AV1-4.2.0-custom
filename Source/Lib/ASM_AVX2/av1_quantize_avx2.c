@@ -62,14 +62,15 @@ static INLINE void init_qp(const int16_t* round_ptr, const int16_t* quant_ptr, c
     }
 
     init_one_qp(&dequant, &qp[2]);
-    *thr = _mm256_srai_epi16(qp[2], 1 + log_scale);
+    // thr holds (dequant >> (1+log_scale)) - 1, so a single cmpgt tests abs >= threshold.
+    *thr = _mm256_sub_epi16(_mm256_srai_epi16(qp[2], 1 + log_scale), _mm256_set1_epi16(1));
 }
 
 static INLINE void update_qp(int log_scale, __m256i* thr, __m256i* qp) {
     qp[0] = _mm256_permute2x128_si256(qp[0], qp[0], 0x11);
     qp[1] = _mm256_permute2x128_si256(qp[1], qp[1], 0x11);
     qp[2] = _mm256_permute2x128_si256(qp[2], qp[2], 0x11);
-    *thr  = _mm256_srai_epi16(qp[2], 1 + log_scale);
+    *thr  = _mm256_sub_epi16(_mm256_srai_epi16(qp[2], 1 + log_scale), _mm256_set1_epi16(1));
 }
 
 #define store_quan(q, addr)                                      \
@@ -106,9 +107,7 @@ static INLINE uint16_t quant_gather_eob(__m256i eob) {
 static INLINE void quantize(const __m256i* thr, const __m256i* qp, __m256i* c, const int16_t* iscan_ptr,
                             TranLow* qcoeff, TranLow* dqcoeff, __m256i* eob) {
     const __m256i abs_coeff = _mm256_abs_epi16(*c);
-    __m256i       mask      = _mm256_cmpgt_epi16(abs_coeff, *thr);
-    mask                    = _mm256_or_si256(mask, _mm256_cmpeq_epi16(abs_coeff, *thr));
-    const int nzflag        = _mm256_movemask_epi8(mask);
+    const int     nzflag    = _mm256_movemask_epi8(_mm256_cmpgt_epi16(abs_coeff, *thr)); // abs >= thr
 
     if (nzflag) {
         __m256i q        = _mm256_adds_epi16(abs_coeff, qp[0]);
@@ -173,9 +172,7 @@ void svt_av1_quantize_fp_avx2(const TranLow* coeff_ptr, intptr_t n_coeffs, const
 static INLINE void quantize_32x32(const __m256i* thr, const __m256i* qp, __m256i* c, const int16_t* iscan_ptr,
                                   TranLow* qcoeff, TranLow* dqcoeff, __m256i* eob) {
     const __m256i abs_coeff = _mm256_abs_epi16(*c);
-    __m256i       mask      = _mm256_cmpgt_epi16(abs_coeff, *thr);
-    mask                    = _mm256_or_si256(mask, _mm256_cmpeq_epi16(abs_coeff, *thr));
-    const int nzflag        = _mm256_movemask_epi8(mask);
+    const int     nzflag    = _mm256_movemask_epi8(_mm256_cmpgt_epi16(abs_coeff, *thr)); // abs >= thr
 
     if (nzflag) {
         __m256i q = _mm256_adds_epi16(abs_coeff, qp[0]);
@@ -244,9 +241,7 @@ void svt_av1_quantize_fp_32x32_avx2(const TranLow* coeff_ptr, intptr_t n_coeffs,
 static INLINE void quantize_64x64(const __m256i* thr, const __m256i* qp, __m256i* c, const int16_t* iscan_ptr,
                                   TranLow* qcoeff, TranLow* dqcoeff, __m256i* eob) {
     const __m256i abs_coeff = _mm256_abs_epi16(*c);
-    __m256i       mask      = _mm256_cmpgt_epi16(abs_coeff, *thr);
-    mask                    = _mm256_or_si256(mask, _mm256_cmpeq_epi16(abs_coeff, *thr));
-    const int nzflag        = _mm256_movemask_epi8(mask);
+    const int     nzflag    = _mm256_movemask_epi8(_mm256_cmpgt_epi16(abs_coeff, *thr)); // abs >= thr
 
     if (nzflag) {
         __m256i q         = _mm256_adds_epi16(abs_coeff, qp[0]);
@@ -349,12 +344,12 @@ static inline __m256i mm256_mullo_epi64(const __m256i a, const __m256i b) {
     // since only the low 64bit part of the result 128bit integer is needed, the above expression can be simplified as: (a1*b0 + a0*b1)<<32 + a0*b0
     const __m256i bswap   = _mm256_shuffle_epi32(b, 0xB1); // b6 b7 b4 b5 b2 b3 b0 b1
     __m256i       prod_hi = _mm256_mullo_epi32(a,
-                                         bswap); // a7*b6 a6*b7 a5*b4 a4*b5 a3*b2 a2*b3 a1*b0 a0*b1
+                                               bswap); // a7*b6 a6*b7 a5*b4 a4*b5 a3*b2 a2*b3 a1*b0 a0*b1
     const __m256i zero    = _mm256_setzero_si256();
     prod_hi               = _mm256_hadd_epi32(prod_hi,
-                                zero); // 0 0 a7*b6+a6*b7 a5*b4+a4*b5 0 0 a3*b2+a2*b3 a1*b0+a0*b1
+                                              zero); // 0 0 a7*b6+a6*b7 a5*b4+a4*b5 0 0 a3*b2+a2*b3 a1*b0+a0*b1
     prod_hi               = _mm256_shuffle_epi32(prod_hi,
-                                   0x73); // a7*b6+a6*b7 0 a5*b4+a4*b5 0 a3*b2+a2*b3 0 a1*b0+a0*b1 0
+                                                 0x73); // a7*b6+a6*b7 0 a5*b4+a4*b5 0 a3*b2+a2*b3 0 a1*b0+a0*b1 0
     const __m256i prod_lo = _mm256_mul_epu32(a, b); // 0 a6*b6 0 a4*b4 0 a2*b2 0 a0*b0
     const __m256i prod    = _mm256_add_epi64(prod_lo, prod_hi);
     return prod;

@@ -716,8 +716,9 @@ static void update_cdef_filters_on_ref_info(PictureControlSet* pcs) {
             cdef_ctrls->pred_uv_f                  = 0;
             cdef_ctrls->first_pass_fs_num          = 0;
             cdef_ctrls->default_second_pass_fs_num = 0;
-            // Set cdef to off if pred is.
-            if ((cdef_ctrls->pred_y_f == 0) && (cdef_ctrls->pred_uv_f == 0)) {
+            // Keep CDEF enabled when QP strength will provide Y and/or UV after reference-Y reuse.
+            if ((cdef_ctrls->pred_y_f == 0) && (cdef_ctrls->pred_uv_f == 0) &&
+                cdef_ctrls->qp_strength_level == CDEF_QP_STRENGTH_OFF) {
                 pcs->ppcs->cdef_level = 0;
             }
         }
@@ -790,8 +791,8 @@ static bool me_based_cdef_skip(PictureControlSet* pcs) {
     const uint8_t in_res = pcs->ppcs->input_resolution;
     // For flat, mult should be based on update_type since all pics are temporal layer 0
     const int      mult = pcs->ppcs->hierarchical_levels ? (pcs->temporal_layer_index + 1)
-             : frame_is_boosted(pcs->ppcs)               ? 1
-             : frame_is_leaf(pcs->ppcs)                  ? 3
+        : frame_is_boosted(pcs->ppcs)                    ? 1
+        : frame_is_leaf(pcs->ppcs)                       ? 3
                                                          : 2;
     const uint32_t use_zero_strength_th =
         disable_cdef_th[pcs->ppcs->cdef_recon_ctrls.zero_filter_strength_lvl][in_res] * mult;

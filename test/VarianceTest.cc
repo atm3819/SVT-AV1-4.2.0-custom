@@ -32,6 +32,7 @@
 #include "util.h"
 #include "gtest/gtest.h"
 #include "utility.h"
+#include "svt_time.h"
 
 using svt_av1_test_tool::SVTRandom;  // to generate the random
 namespace {
@@ -786,6 +787,64 @@ TEST_P(SubpelVarianceTest, ExtremeRef) {
     ExtremeRefTest();
 }
 
+TEST_P(SubpelVarianceTest, DISABLED_Speed) {
+#if ARCH_AARCH64
+    svt_aom_setup_rtcd_internal(EB_CPU_FLAGS_NEON);
+#endif
+    SVTRandom rnd_(0, mask);
+    if (!use_high_bit_depth) {
+        for (int j = 0; j < block_size; j++)
+            src_[j] = rnd_.Rand8();
+        for (int j = 0; j < block_size + width + height + 1; j++)
+            ref_[j] = rnd_.Rand8();
+    } else {
+        for (int j = 0; j < block_size; j++)
+            CONVERT_TO_SHORTPTR(src_)[j] = rnd_.Rand16() & mask;
+        for (int j = 0; j < block_size + width + height + 1; j++)
+            CONVERT_TO_SHORTPTR(ref_)[j] = rnd_.Rand16() & mask;
+    }
+    const int num_loops = (1 << 26) / block_size;
+    // x_offset 0 and 4 have dedicated paths, so time them separately from
+    // the general bilinear offsets.
+    const char *const names[3] = {"0/4", "mixed", "bilinear"};
+    for (int kind = 0; kind < 3; ++kind) {
+        double time_ref = 0, time_tst = 0;
+        unsigned int sse1 = 0, sse2 = 0, var1 = 0, var2 = 0;
+        for (int x = 0; x < 8; ++x) {
+            for (int y = 0; y < 8; ++y) {
+                const int x_special = x == 0 || x == 4;
+                const int y_special = y == 0 || y == 4;
+                const int this_kind = x_special && y_special     ? 0
+                                      : (x_special || y_special) ? 1
+                                                                 : 2;
+                if (this_kind != kind)
+                    continue;
+                uint64_t start_s, start_us, end_s, end_us;
+                svt_av1_get_time(&start_s, &start_us);
+                for (int i = 0; i < num_loops; ++i)
+                    var1 += func_ref(ref_, width + 1, x, y, src_, width, &sse1);
+                svt_av1_get_time(&end_s, &end_us);
+                time_ref += svt_av1_compute_overall_elapsed_time_ms(
+                    start_s, start_us, end_s, end_us);
+                svt_av1_get_time(&start_s, &start_us);
+                for (int i = 0; i < num_loops; ++i)
+                    var2 += func_tst(ref_, width + 1, x, y, src_, width, &sse2);
+                svt_av1_get_time(&end_s, &end_us);
+                time_tst += svt_av1_compute_overall_elapsed_time_ms(
+                    start_s, start_us, end_s, end_us);
+            }
+        }
+        EXPECT_EQ(var1, var2);
+        printf("%3dx%-3d %-8s ref %8.2f ms  tst %8.2f ms  (%5.2fx)\n",
+               width,
+               height,
+               names[kind],
+               time_ref,
+               time_tst,
+               time_ref / time_tst);
+    }
+}
+
 #ifdef ARCH_X86_64
 const TestParams kArraySubpelVariance_sse2[] = {
     // clang-format off
@@ -838,6 +897,42 @@ const TestParams kArraySubpelVariance_sse2[] = {
 
 INSTANTIATE_TEST_SUITE_P(SSE2, SubpelVarianceTest,
                          ::testing::ValuesIn(kArraySubpelVariance_sse2));
+
+TEST(SubpelVarianceTest, Sse2HandlesUnalignedDst) {
+    constexpr int width = 16;
+    constexpr int height = 16;
+    constexpr int source_stride = width;
+    constexpr int reference_stride = width + 1;
+    const size_t dst_size = width * height + 1;
+    const size_t src_size = reference_stride * height;
+
+    uint8_t *dst_storage =
+        reinterpret_cast<uint8_t *>(svt_aom_memalign(32, dst_size));
+    uint8_t *src = reinterpret_cast<uint8_t *>(svt_aom_memalign(32, src_size));
+    ASSERT_NE(dst_storage, nullptr);
+    ASSERT_NE(src, nullptr);
+
+    uint8_t *dst = dst_storage + 1;
+    for (size_t i = 0; i < dst_size - 1; ++i) {
+        dst[i] = static_cast<uint8_t>(i * 17);
+    }
+    for (size_t i = 0; i < src_size; ++i) {
+        src[i] = static_cast<uint8_t>(i * 29);
+    }
+
+    unsigned int expected_sse;
+    unsigned int actual_sse;
+    const unsigned int expected = svt_aom_sub_pixel_variance16x16_c(
+        src, reference_stride, 0, 0, dst, source_stride, &expected_sse);
+    const unsigned int actual = svt_aom_sub_pixel_variance16x16_sse2(
+        src, reference_stride, 0, 0, dst, source_stride, &actual_sse);
+
+    EXPECT_EQ(expected_sse, actual_sse);
+    EXPECT_EQ(expected, actual);
+
+    svt_aom_free(dst_storage);
+    svt_aom_free(src);
+}
 
 const TestParams kArraySubpelVariance_ssse3[] = {
     // clang-format off

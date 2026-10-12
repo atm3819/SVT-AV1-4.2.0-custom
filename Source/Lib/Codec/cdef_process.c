@@ -245,7 +245,7 @@ EbErrorType svt_aom_cdef_context_ctor(EbThreadContext* thread_ctx, const EbEncHa
 
     // Input/Output System Resource Manager FIFOs
     cdef_ctx->cdef_input_fifo_ptr  = svt_system_resource_get_consumer_fifo(enc_handle_ptr->dlf_results_resource_ptr,
-                                                                          index);
+                                                                           index);
     cdef_ctx->cdef_output_fifo_ptr = svt_system_resource_get_producer_fifo(enc_handle_ptr->cdef_results_resource_ptr,
                                                                            index);
 
@@ -695,7 +695,7 @@ EbErrorType svt_aom_cdef_kernel_iter(void* context) {
     Av1Common* cm                         = pcs->ppcs->av1_cm;
     frm_hdr                               = &pcs->ppcs->frm_hdr;
     CdefSearchControls* cdef_search_ctrls = &pcs->ppcs->cdef_search_ctrls;
-    if (!cdef_search_ctrls->use_reference_cdef_fs && !cdef_search_ctrls->use_qp_strength) {
+    if (!cdef_search_ctrls->use_reference_cdef_fs && cdef_search_ctrls->qp_strength_level != CDEF_QP_STRENGTH_YUV) {
         if (scs->seq_header.cdef_level && pcs->ppcs->cdef_level) {
             cdef_seg_search(context_ptr, pcs, scs, dlf_results->segment_index);
         }

@@ -224,6 +224,7 @@ EbErrorType svt_aom_mode_decision_context_ctor(ModeDecisionContext* ctx, Sequenc
     uint32_t   buffer_index;
     uint32_t   cand_index;
 
+    ctx->intrabc_last_dv.as_int = 0; // no last DV yet (seeds the RTC IntraBC BVP fallback)
     ctx->init_max_block_cnt     = max_block_cnt;
     uint32_t block_max_count_sb = max_block_cnt;
 
@@ -482,11 +483,11 @@ EbErrorType svt_aom_mode_decision_context_ctor(ModeDecisionContext* ctx, Sequenc
 
     // Alloc mds and pc_tree, which are used to track tested blocks in MD
     bool    disallow_4x4     = allintra ? svt_aom_get_disallow_4x4_allintra(enc_mode)
-               : rtc_tune               ? svt_aom_get_disallow_4x4_rtc()
+        : rtc_tune                      ? svt_aom_get_disallow_4x4_rtc()
                                         : svt_aom_get_disallow_4x4_default(enc_mode);
     bool    disallow_8x8     = allintra ? svt_aom_get_disallow_8x8_allintra()
-               : rtc_tune ? svt_aom_get_disallow_8x8_rtc(enc_mode, scs->max_input_luma_width, scs->max_input_luma_height)
-                          : svt_aom_get_disallow_8x8_default();
+        : rtc_tune ? svt_aom_get_disallow_8x8_rtc(enc_mode, scs->max_input_luma_width, scs->max_input_luma_height)
+                   : svt_aom_get_disallow_8x8_default();
     uint8_t min_bsize        = disallow_8x8 ? 16 : disallow_4x4 ? 8 : 4;
     int     blocks_per_depth = (sb_size / min_bsize) * (sb_size / min_bsize);
     int     blocks_to_alloc  = 0;
@@ -524,8 +525,8 @@ EbErrorType svt_aom_mode_decision_context_ctor(ModeDecisionContext* ctx, Sequenc
             ci->max_height                  = blk_geom->bheight;
             ci->bit_depth                   = EB_THIRTYTWO_BIT;
             ci->color_format                = (blk_geom->bwidth > 4 && blk_geom->bheight > 4)
-                               ? EB_YUV420
-                               : EB_YUV444; // PW - must have at least 4x4 for chroma coeffs
+                ? EB_YUV420
+                : EB_YUV444; // PW - must have at least 4x4 for chroma coeffs
             ci->border                      = 0;
             ci->split_mode                  = false;
 
@@ -669,7 +670,7 @@ EbErrorType svt_aom_mode_decision_context_ctor(ModeDecisionContext* ctx, Sequenc
 
     for (buffer_index = 0; buffer_index < ctx->max_nics_uv; ++buffer_index) {
         ctx->cand_bf_ptr_array[buffer_index] = &ctx->cand_bf_pool[buffer_index];
-        EbErrorType cbf_err                  = svt_aom_mode_decision_cand_bf_ctor(ctx->cand_bf_ptr_array[buffer_index],
+        EbErrorType cbf_err = svt_aom_mode_decision_cand_bf_ctor(ctx->cand_bf_ptr_array[buffer_index],
                                                                  &ctx->cand_pred_pool.descs[buffer_index],
                                                                  &ctx->cand_rec_coeff_pool.descs[buffer_index],
                                                                  &ctx->cand_quant_pool.descs[buffer_index],
@@ -769,6 +770,9 @@ void svt_aom_reset_mode_decision(SequenceControlSet* scs, ModeDecisionContext* c
     ctx->hbd_md = SVT_EFFECTIVE_HBD_MD(pcs->hbd_md);
     // Reset MD rate Estimation table to initial values by copying from md_rate_est_ctx
     ctx->md_rate_est_ctx = pcs->md_rate_est_ctx;
+    // Segments are dispatched to EncDec threads dynamically; scoping the last DV to the segment keeps
+    // the BVP fallback independent of the SB->thread mapping (deterministic at any --lp).
+    ctx->intrabc_last_dv.as_int = 0;
     // Reset CABAC Contexts
 
     // Reset Neighbor Arrays at start of new Segment / Picture

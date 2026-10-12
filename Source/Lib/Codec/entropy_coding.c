@@ -229,7 +229,7 @@ static void set_bitstream_level_tier(SequenceControlSet* scs) {
     }
     for (int32_t i = 0; i < MAX_NUM_OPERATING_POINTS; ++i) {
         scs->level[i]                               = bl;
-        scs->seq_header.operating_point[i].seq_tier = 0; // setting main tier by default
+        scs->seq_header.operating_point[i].seq_tier = bl.major > 3 ? scs->static_config.tier : 0;
     }
 }
 
@@ -256,9 +256,9 @@ void svt_aom_get_txb_ctx(PictureControlSet* pcs, const int32_t plane,
     static const int8_t signs[3]    = {0, -1, 1};
     const int32_t       plane_shift = !!plane;
     int32_t             txb_w_unit  = MIN(eb_tx_size_wide_unit[tx_size],
-                             (int32_t)((pcs->ppcs->aligned_width >> plane_shift) - blk_org_x) >> 2);
+                                          (int32_t)((pcs->ppcs->aligned_width >> plane_shift) - blk_org_x) >> 2);
     int32_t             txb_h_unit  = MIN(eb_tx_size_high_unit[tx_size],
-                             (int32_t)((pcs->ppcs->aligned_height >> plane_shift) - blk_org_y) >> 2);
+                                          (int32_t)((pcs->ppcs->aligned_height >> plane_shift) - blk_org_y) >> 2);
 
     int16_t dc_sign = 0;
     int32_t top     = 0; /* OR-accumulation across neighbors */
@@ -1492,10 +1492,10 @@ static MvJointType av1_get_mv_joint_diff(const int32_t diff[const 2]) {
     return diff[1] == 0 ? MV_JOINT_HZVNZ : MV_JOINT_HNZVNZ;
 }
 
-void svt_av1_encode_mv(PictureParentControlSet* pcs, AomWriter* ec_writer, const Mv* mv, const Mv* ref,
-                       NmvContext* mvctx, int32_t usehp) {
+void svt_av1_encode_mv(PictureParentControlSet* pcs, AomWriter* ec_writer, const Mv mv, const Mv ref, NmvContext* mvctx,
+                       int32_t usehp) {
     // The y-component (row component) of the MV is coded first
-    int32_t           diff[2] = {mv->y - ref->y, mv->x - ref->x};
+    int32_t           diff[2] = {mv.y - ref.y, mv.x - ref.x};
     const MvJointType j       = av1_get_mv_joint_diff(diff);
 
     if (pcs->frm_hdr.force_integer_mv) {
@@ -3313,12 +3313,15 @@ static void write_uncompressed_header_obu(SequenceControlSet* scs /*Av1Comp *cpi
             //ref_cnt_fb(frame_bufs, &cm->new_fb_idx, frame_to_show);
 
             svt_aom_wb_write_bit(wb, 1); // show_existing_frame
+            // ref_frame_id[] holds a pre-refresh snapshot, which is the right
+            // value here only because frame_id is confined to LOW_DELAY, where
+            // set_frame_display_params never emits show_existing.
+            assert(!scs->seq_header.frame_id_numbers_present_flag &&
+                   "show_existing_frame with frame_id: ref_frame_id[] is a pre-refresh snapshot");
             svt_aom_wb_write_literal(wb, frm_hdr->show_existing_frame, 3);
             if (scs->seq_header.frame_id_numbers_present_flag) {
-                SVT_ERROR("frame_id_numbers_present_flag not supported yet\n");
-                /*int32_t frame_id_len = cm->seq_params.frame_id_length;
-                int32_t display_frame_id = cm->ref_frame_id[cpi->show_existing_frame];
-                svt_aom_wb_write_literal(wb, display_frame_id, frame_id_len);*/
+                const int32_t frame_id_len = scs->seq_header.frame_id_length;
+                svt_aom_wb_write_literal(wb, frm_hdr->ref_frame_id[frm_hdr->show_existing_frame], frame_id_len);
             }
 
             //        if (cm->reset_decoder_state &&
@@ -3502,19 +3505,36 @@ static void write_uncompressed_header_obu(SequenceControlSet* scs /*Av1Comp *cpi
                 }
 
                 if (scs->seq_header.frame_id_numbers_present_flag) {
-                    SVT_ERROR("frame_id_numbers_present_flag not supported yet\n");
-                    //int32_t i = get_ref_frame_map_idx(cpi, ref_frame);
-                    //int32_t frame_id_len = cm->seq_params.frame_id_length;
-                    //int32_t diff_len = cm->seq_params.delta_frame_id_length;
-                    //int32_t delta_frame_id_minus1 =
-                    //    ((cm->current_frame_id - cm->ref_frame_id[i] +
-                    //    (1 << frame_id_len)) %
-                    //    (1 << frame_id_len)) -
-                    //    1;
-                    //if (delta_frame_id_minus1 < 0 ||
-                    //    delta_frame_id_minus1 >= (1 << diff_len))
-                    //    cm->invalid_delta_frame_id_minus1 = 1;
-                    //svt_aom_wb_write_literal(wb, delta_frame_id_minus1, diff_len);
+                    const int32_t slot     = get_ref_frame_map_idx(pcs, ref_frame);
+                    const int32_t diff_len = scs->seq_header.delta_frame_id_length;
+                    assert((uint32_t)slot < REF_FRAMES && "ref_dpb_index out of range with frame_id enabled");
+                    int32_t delta_frame_id_minus1 = svt_aom_frame_id_delta_minus1(
+                        frm_hdr->current_frame_id, frm_hdr->ref_frame_id[slot], scs->seq_header.frame_id_length);
+                    // Every emitted reference is either an anchor bounded by
+                    // apply_ref_use, or a slot in 0..3: prune_refs collapses the
+                    // positions that reach 4..7 while ref counts are <= 2, which
+                    // svt_av1_enc_set_parameter requires whenever LTR is on. So
+                    // the delta always fits.
+                    //
+                    // Should that ever break, the decoder rejects the frame
+                    // either way: it reconstructs the reference id from the delta
+                    // and compares it for equality. Clamp anyway, so the emitted
+                    // value is a defined one rather than whatever the literal
+                    // writer makes of a negative int -- it shifts the value right
+                    // per bit, which is implementation-defined when signed.
+                    if (delta_frame_id_minus1 < 0 || delta_frame_id_minus1 >= (1 << diff_len)) {
+                        SVT_ERROR(
+                            "frame_id: delta_frame_id_minus1=%d out of [0,%d) (current=%u ref=%u slot=%d); "
+                            "clamping, the decoder will reject this frame\n",
+                            delta_frame_id_minus1,
+                            (1 << diff_len),
+                            (unsigned)frm_hdr->current_frame_id,
+                            (unsigned)frm_hdr->ref_frame_id[slot],
+                            slot);
+                        assert(0 && "frame_id delta out of range");
+                        delta_frame_id_minus1 = (1 << diff_len) - 1;
+                    }
+                    svt_aom_wb_write_literal(wb, delta_frame_id_minus1, diff_len);
                 }
             }
 
@@ -4058,7 +4078,7 @@ static void write_wiener_filter(int32_t wiener_win, const WienerInfo* wiener_inf
                                          WIENER_FILT_TAP2_SUBEXP_K,
                                          ref_wiener_info->hfilter[2] - WIENER_FILT_TAP2_MINV,
                                          wiener_info->hfilter[2] - WIENER_FILT_TAP2_MINV);
-    svt_memcpy(ref_wiener_info, wiener_info, sizeof(*wiener_info));
+    memcpy(ref_wiener_info, wiener_info, sizeof(*wiener_info));
 }
 
 static void write_sgrproj_filter(const SgrprojInfo* sgrproj_info, SgrprojInfo* ref_sgrproj_info, AomWriter* wb) {
@@ -4091,7 +4111,7 @@ static void write_sgrproj_filter(const SgrprojInfo* sgrproj_info, SgrprojInfo* r
                                              (uint16_t)(sgrproj_info->xqd[1] - SGRPROJ_PRJ_MIN1));
     }
 
-    svt_memcpy(ref_sgrproj_info, sgrproj_info, sizeof(*sgrproj_info));
+    memcpy(ref_sgrproj_info, sgrproj_info, sizeof(*sgrproj_info));
 }
 
 static void loop_restoration_write_sb_coeffs(PictureControlSet* pcs, FRAME_CONTEXT* frame_context,
@@ -4374,15 +4394,15 @@ static void write_palette_mode_info(PictureParentControlSet* ppcs, FRAME_CONTEXT
     }
 }
 
-void svt_av1_encode_dv(AomWriter* w, const Mv* mv, const Mv* ref, NmvContext* mvctx) {
+void svt_av1_encode_dv(AomWriter* w, const Mv mv, const Mv ref, NmvContext* mvctx) {
     // DV and ref DV should not have sub-pel.
-    assert((mv->x & 7) == 0);
-    assert((mv->y & 7) == 0);
-    assert((ref->x & 7) == 0);
-    assert((ref->y & 7) == 0);
+    assert((mv.x & 7) == 0);
+    assert((mv.y & 7) == 0);
+    assert((ref.x & 7) == 0);
+    assert((ref.y & 7) == 0);
     // The y-component (row component) of the MV is coded first
-    const Mv          diff = {{mv->x - ref->x, mv->y - ref->y}};
-    const MvJointType j    = svt_av1_get_mv_joint(&diff);
+    const Mv          diff = {{mv.x - ref.x, mv.y - ref.y}};
+    const MvJointType j    = svt_av1_get_mv_joint(diff);
 
     aom_write_symbol(w, j, mvctx->joints_cdf, MV_JOINTS);
     if (mv_joint_vertical(j)) {
@@ -4407,7 +4427,7 @@ static void write_intrabc_info(FRAME_CONTEXT* ec_ctx, MbModeInfo* mbmi, EcBlkStr
         //assert(mbmi->motion_mode == SIMPLE_TRANSLATION);
         Mv dv_ref = blk_ptr->predmv[0];
         Mv mv     = mbmi->block_mi.mv[INTRA_FRAME];
-        svt_av1_encode_dv(w, &mv, &dv_ref, &ec_ctx->ndvc);
+        svt_av1_encode_dv(w, mv, dv_ref, &ec_ctx->ndvc);
     }
 }
 
@@ -5221,7 +5241,7 @@ static EbErrorType write_modes_b(PictureControlSet* pcs, EntropyCodingContext* e
 
                         Mv mv = mbmi->block_mi.mv[ref];
 
-                        svt_av1_encode_mv(pcs->ppcs, ec_writer, &mv, &ref_mv, nmvc, frm_hdr->allow_high_precision_mv);
+                        svt_av1_encode_mv(pcs->ppcs, ec_writer, mv, ref_mv, nmvc, frm_hdr->allow_high_precision_mv);
                     }
                 } else if (inter_mode == NEAREST_NEWMV || inter_mode == NEAR_NEWMV) {
                     NmvContext* nmvc   = &frame_context->nmvc;
@@ -5229,14 +5249,14 @@ static EbErrorType write_modes_b(PictureControlSet* pcs, EntropyCodingContext* e
 
                     Mv mv = mbmi->block_mi.mv[1];
 
-                    svt_av1_encode_mv(pcs->ppcs, ec_writer, &mv, &ref_mv, nmvc, frm_hdr->allow_high_precision_mv);
+                    svt_av1_encode_mv(pcs->ppcs, ec_writer, mv, ref_mv, nmvc, frm_hdr->allow_high_precision_mv);
                 } else if (inter_mode == NEW_NEARESTMV || inter_mode == NEW_NEARMV) {
                     NmvContext* nmvc   = &frame_context->nmvc;
                     Mv          ref_mv = blk_ptr->predmv[0];
 
                     Mv mv = mbmi->block_mi.mv[0];
 
-                    svt_av1_encode_mv(pcs->ppcs, ec_writer, &mv, &ref_mv, nmvc, frm_hdr->allow_high_precision_mv);
+                    svt_av1_encode_mv(pcs->ppcs, ec_writer, mv, ref_mv, nmvc, frm_hdr->allow_high_precision_mv);
                 }
                 if (scs->seq_header.enable_interintra_compound && svt_aom_is_interintra_allowed(mbmi)) {
                     if (mbmi->block_mi.is_interintra_used) {

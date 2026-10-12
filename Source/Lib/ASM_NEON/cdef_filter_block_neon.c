@@ -315,9 +315,10 @@ static inline uint8x8_t cdef_finalize8(int16x8_t sum, uint8x8_t row_u8, uint8x8_
     return vqmovun_s16(res);
 }
 
-void svt_av1_cdef_filter_block_8xn_8_native_neon(uint8_t* dst, int32_t dstride, const uint8_t* in, int32_t pri_strength,
-                                                 int32_t sec_strength, int32_t dir, int32_t damping,
-                                                 int32_t coeff_shift, uint8_t height, uint8_t subsampling_factor) {
+static void svt_av1_cdef_filter_block_8xn_8_native_neon(uint8_t* dst, int32_t dstride, const uint8_t* in,
+                                                        int32_t pri_strength, int32_t sec_strength, int32_t dir,
+                                                        int32_t damping, int32_t coeff_shift, uint8_t height,
+                                                        uint8_t subsampling_factor) {
     const int*    pri_taps    = svt_aom_eb_cdef_pri_taps[(pri_strength >> coeff_shift) & 1];
     const int*    sec_taps    = svt_aom_eb_cdef_sec_taps[(pri_strength >> coeff_shift) & 1];
     const int32_t pri_damping = pri_strength ? AOMMAX(0, damping - get_msb(pri_strength)) : 0;
@@ -421,9 +422,10 @@ void svt_av1_cdef_filter_block_8xn_8_native_neon(uint8_t* dst, int32_t dstride, 
     }
 }
 
-void svt_av1_cdef_filter_block_4xn_8_native_neon(uint8_t* dst, int32_t dstride, const uint8_t* in, int32_t pri_strength,
-                                                 int32_t sec_strength, int32_t dir, int32_t damping,
-                                                 int32_t coeff_shift, uint8_t height, uint8_t subsampling_factor) {
+static void svt_av1_cdef_filter_block_4xn_8_native_neon(uint8_t* dst, int32_t dstride, const uint8_t* in,
+                                                        int32_t pri_strength, int32_t sec_strength, int32_t dir,
+                                                        int32_t damping, int32_t coeff_shift, uint8_t height,
+                                                        uint8_t subsampling_factor) {
     const int*    pri_taps    = svt_aom_eb_cdef_pri_taps[(pri_strength >> coeff_shift) & 1];
     const int*    sec_taps    = svt_aom_eb_cdef_sec_taps[(pri_strength >> coeff_shift) & 1];
     const int32_t pri_damping = pri_strength ? AOMMAX(0, damping - get_msb(pri_strength)) : 0;
@@ -1305,7 +1307,7 @@ static void cdef_filter_block_4xn_8_bounded_neon(uint8_t* dst, int32_t dstride, 
             (CACC) = constrain8x16(tap8, row8, (THR), (DAMP));                                         \
         } else {                                                                                       \
             av     = _rs ? vandq_u8((SGN) > 0 ? col16p[B] : col16n[B],                                 \
-                                bnd_row16_4(i, sub, (SGN) * dr_b[B], edge_top, edge_bottom, rows)) \
+                                    bnd_row16_4(i, sub, (SGN) * dr_b[B], edge_top, edge_bottom, rows)) \
                          : ((SGN) > 0 ? col16p[B] : col16n[B]);                                        \
             max8   = vmaxq_u8(max8, vandq_u8(tap8, av));                                               \
             min8   = vminq_u8(min8, vorrq_u8(tap8, vmvnq_u8(av)));                                     \
@@ -1380,7 +1382,7 @@ static void cdef_filter_block_4xn_8_bounded_neon(uint8_t* dst, int32_t dstride, 
             (CACC) = constrain8x16(tap8, row8, (THR), (DAMP));                                         \
         } else {                                                                                       \
             av     = _rs ? vandq_u8((SGN) > 0 ? col16p[B] : col16n[B],                                 \
-                                bnd_row16_2(i, sub, (SGN) * dr_b[B], edge_top, edge_bottom, rows)) \
+                                    bnd_row16_2(i, sub, (SGN) * dr_b[B], edge_top, edge_bottom, rows)) \
                          : ((SGN) > 0 ? col16p[B] : col16n[B]);                                        \
             max8   = vmaxq_u8(max8, vandq_u8(tap8, av));                                               \
             min8   = vminq_u8(min8, vorrq_u8(tap8, vmvnq_u8(av)));                                     \

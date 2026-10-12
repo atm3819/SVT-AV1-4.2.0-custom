@@ -446,6 +446,9 @@ typedef struct MotionEstimationData {
     uint8_t      max_refs; // total max active references
     uint8_t      max_l0; // max active refs in L0
     TplStats**   tpl_stats;
+    // False until tpl_mc_flow() fills tpl_stats for this picture; a pooled object still holds the
+    // previous tenant's stale values, lazy rewrite
+    bool tpl_stats_valid;
 
     TplSrcStats* tpl_src_stats_buffer; // tpl src based stats
 
@@ -551,6 +554,12 @@ typedef struct GmControls {
     CorrespondenceMethod correspondence_method;
 } GmControls;
 
+typedef enum CdefQpStrengthLevel {
+    CDEF_QP_STRENGTH_OFF,
+    CDEF_QP_STRENGTH_UV,
+    CDEF_QP_STRENGTH_YUV,
+} CdefQpStrengthLevel;
+
 typedef struct CdefSearchControls {
     uint8_t enabled;
     // Number of primary filters considered in the first pass. (luma and chroma)
@@ -586,8 +595,8 @@ typedef struct CdefSearchControls {
     uint8_t skip_th;
     // If true, skip UV filter search and force UV filters to take the chosen luma values
     bool uv_from_y;
-    // Enable QP-based CDEF strength prediction (bypass strength search)
-    bool use_qp_strength;
+    // Plane scope for QP-based strength prediction.
+    CdefQpStrengthLevel qp_strength_level;
 } CdefSearchControls;
 
 typedef struct CdefReconControls {
@@ -642,6 +651,19 @@ typedef struct IntrabcCtrls {
     MeshPattern mesh_patterns[MAX_MESH_STEP]; // Mesh search patterns
     bool        mesh_qp_scaling; // Scale mesh search ranges based on QP
     uint8_t     search_dir; // Search direction: 0 = Left + Top, 1 = Top only
+    // RTC search heuristics (encoder-side only):
+    bool
+        pred_first; // Evaluate the (AV1-normative) DV predictor first; on a near-exact match, take it and skip the hash + full-pixel search
+    uint16_t pred_exit_th; // Per-pixel SAD budget to accept the predictor early (0 = exact match only)
+    uint8_t
+        local_search_sb; // Generic search-range cap: limit the DV search to the current + N left/above superblocks (0 = full legal range)
+    uint8_t
+        hash_miss_mode; // On a hash miss: 0 = full diamond search; 1 = inject the SAD-gated predicted DV (BVP, no search); 2 = skip
+    uint16_t
+        bvp_th; // Per-pixel SAD budget for the BVP fallback (hash_miss_mode==1); larger accepts looser predictor matches
+    // After the BVP pick on a hash miss, probe an N-point integer-offset cloud around it and keep
+    // the lowest-SAD point (0 = off).
+    uint8_t probe_pts;
 } IntrabcCtrls;
 
 typedef struct PaletteCtrls {
@@ -1165,6 +1187,8 @@ typedef struct PictureParentControlSet {
     uint32_t target_bit_rate;
     uint32_t frame_rate_numerator;
     uint32_t frame_rate_denominator;
+    int64_t  frame_skip_drain_bits;
+    uint32_t frame_skip_count;
     uint64_t norm_me_dist;
     uint8_t  tpl_params_ready;
     bool     is_startup_gop;
@@ -1254,6 +1278,7 @@ EbErrorType svt_aom_me_sb_results_ctor(MeSbResults* obj_ptr, PictureControlSetIn
 EbErrorType ppcs_update_param(PictureParentControlSet* ppcs);
 EbErrorType pcs_update_param(PictureControlSet* pcs, int8_t enc_mode);
 EbErrorType me_update_param(MotionEstimationData* me_data, struct SequenceControlSet* scs);
+void        me_reset_carryover(MotionEstimationData* me_data);
 EbErrorType recon_coef_update_param(EncDecSet* recon_coef, struct SequenceControlSet* scs);
 bool        svt_aom_is_pic_skipped(PictureParentControlSet* pcs);
 void svt_aom_get_gm_needed_resolutions(uint8_t ds_lvl, bool* gm_need_full, bool* gm_need_quart, bool* gm_need_sixteen);
