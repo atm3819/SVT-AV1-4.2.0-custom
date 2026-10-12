@@ -1,0 +1,48 @@
+
+name: Check SVT-AV1 upstream
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Merge upstream updates
+        id: sync
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://gitlab.com/AOMediaCodec/SVT-AV1.git
+          git fetch upstream master
+          git checkout -B upstream-sync "origin/$DEFAULT_BRANCH"
+          git merge --no-edit upstream/master
+          git push --force origin upstream-sync
+
+      - name: Create update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if gh pr list --head upstream-sync --base "$DEFAULT_BRANCH" --state open --json number --jq 'length' | grep -q '^0$'; then
+            gh pr create \
+              --base "$DEFAULT_BRANCH" \
+              --head upstream-sync \
+              --title "Sync latest SVT-AV1 upstream" \
+              --body "Proposes merging updates from the official SVT-AV1 GitLab repository."
+          else
+            echo "An upstream update pull request is already open."
+          fi
+  
